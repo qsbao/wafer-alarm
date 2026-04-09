@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Trend Chart - Wafer Alarm System</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://unpkg.com/echarts@5/dist/echarts.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f6fa; color: #333; }
+    .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+    h1 { font-size: 1.5rem; font-weight: 600; margin-bottom: 20px; }
+    .chart-card { background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); padding: 20px; margin-bottom: 20px; }
+    .info-bar { font-size: 0.8rem; color: #888; margin-bottom: 12px; display: flex; gap: 16px; }
+    .info-bar span { background: #f0f0f0; padding: 2px 10px; border-radius: 4px; }
+    .empty-state { text-align: center; padding: 48px 20px; color: #888; font-size: 1rem; }
+    .back-link { font-size: 0.875rem; color: #3498db; text-decoration: none; margin-bottom: 16px; display: inline-block; }
+    .back-link:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    function TrendChart({ points }) {
+      const chartRef = useRef(null);
+      const instanceRef = useRef(null);
+
+      useEffect(() => {
+        if (!chartRef.current) return;
+        if (!instanceRef.current) {
+          instanceRef.current = echarts.init(chartRef.current);
+        }
+
+        if (points.length === 0) {
+          instanceRef.current.setOption({
+            title: { text: 'No data', left: 'center', top: 'center', textStyle: { color: '#999', fontSize: 16 } },
+            xAxis: { show: false },
+            yAxis: { show: false },
+            series: [],
+          });
+          return;
+        }
+
+        const timestamps = points.map(p => new Date(p.ts).toLocaleString());
+        const values = points.map(p => p.value);
+
+        instanceRef.current.setOption({
+          tooltip: {
+            trigger: 'axis',
+            formatter: params => {
+              const p = params[0];
+              return `${p.name}<br/>Value: ${p.value}`;
+            },
+          },
+          xAxis: {
+            type: 'category',
+            data: timestamps,
+            axisLabel: { rotate: 30, fontSize: 10 },
+          },
+          yAxis: { type: 'value', name: 'Value' },
+          series: [{
+            type: 'line',
+            data: values,
+            symbol: 'circle',
+            symbolSize: 4,
+            lineStyle: { width: 1.5, color: '#3498db' },
+            itemStyle: { color: '#3498db' },
+          }],
+          grid: { top: 40, bottom: 80, left: 60, right: 20 },
+          dataZoom: [{ type: 'inside' }],
+        });
+
+        const handleResize = () => instanceRef.current?.resize();
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+      }, [points]);
+
+      return <div ref={chartRef} style={{ width: '100%', height: 400 }} />;
+    }
+
+    function App() {
+      const [points, setPoints] = useState([]);
+      const [downsampled, setDownsampled] = useState(false);
+      const [loading, setLoading] = useState(true);
+      const [error, setError] = useState(null);
+
+      useEffect(() => {
+        async function fetchTrend() {
+          try {
+            // Hardcoded parameter ID 1 (the walking-skeleton CD parameter)
+            // Default to last 24 hours
+            const to = new Date().toISOString();
+            const from = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+            const res = await fetch(`/api/trend-chart?parameterId=1&from=${from}&to=${to}`);
+            if (!res.ok) throw new Error(res.statusText);
+            const data = await res.json();
+            setPoints(data.points || []);
+            setDownsampled(data.downsampled || false);
+          } catch (e) {
+            setError(e.message);
+          } finally {
+            setLoading(false);
+          }
+        }
+        fetchTrend();
+      }, []);
+
+      if (loading) return <div className="container"><div className="empty-state">Loading...</div></div>;
+      if (error) return <div className="container"><div className="empty-state">Error: {error}</div></div>;
+
+      return (
+        <div className="container">
+          <a href="/" className="back-link">Back to Alarms</a>
+          <h1>Trend Chart - CD Parameter</h1>
+          <div className="info-bar">
+            <span>{points.length} points</span>
+            {downsampled && <span>Downsampled</span>}
+            {!downsampled && points.length > 0 && <span>Raw data</span>}
+          </div>
+          <div className="chart-card">
+            <TrendChart points={points} />
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>

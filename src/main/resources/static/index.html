@@ -232,6 +232,7 @@
           <h1>
             Wafer Alarm System
             {lastRefresh && <span className="refresh-info">Last refresh: {lastRefresh.toLocaleTimeString()}</span>}
+            <a href="/trend.html" style={{ fontSize: '0.875rem', marginLeft: 16, color: '#3498db', textDecoration: 'none' }}>Trend Chart</a>
           </h1>
           <div className="chart-card">
             <SeverityChart alarms={alarms} />
