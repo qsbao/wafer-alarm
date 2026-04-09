@@ -54,6 +54,27 @@ class TrendChartServiceIntegrationTest {
     }
 
     @Test
+    void downsamples_when_above_threshold() throws Exception {
+        // Test config sets threshold to 5, so 8 points should trigger downsampling
+        var param = parameterRepo.save(new ParameterEntity("CD", "nm", 100.0, 0.0));
+        var t = Instant.parse("2024-01-01T00:00:00Z");
+
+        for (int i = 0; i < 8; i++) {
+            measurementRepo.save(new MeasurementEntity(
+                    param.getId(), "W" + i, (double) i * 10,
+                    t.plusSeconds(i * 60L), "T1", "R1", "P1", "L1"));
+        }
+
+        mvc.perform(get("/api/trend-chart")
+                        .param("parameterId", param.getId().toString())
+                        .param("from", "2024-01-01T00:00:00Z")
+                        .param("to", "2024-01-02T00:00:00Z"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.downsampled", is(true)))
+                .andExpect(jsonPath("$.points.length()", lessThan(8)));
+    }
+
+    @Test
     void empty_measurements_returns_empty_list() throws Exception {
         var param = parameterRepo.save(new ParameterEntity("CD", "nm", 100.0, 0.0));
 

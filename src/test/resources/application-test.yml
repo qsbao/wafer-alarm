@@ -20,3 +20,5 @@ app:
     pool-size: 1
     tick-interval-seconds: 5
     overlap-window-minutes: 10
+  trend:
+    downsample-threshold: 5
