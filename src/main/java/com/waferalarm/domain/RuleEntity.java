@@ -29,6 +29,9 @@ public class RuleEntity {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    @Column(name = "current_version_id")
+    private Long currentVersionId;
+
     protected RuleEntity() {}
 
     public RuleEntity(Long parameterId, RuleType ruleType, Severity severity) {
@@ -47,6 +50,15 @@ public class RuleEntity {
     public boolean isEnabled() { return enabled; }
 
     public RuleData toRuleData() {
-        return new RuleData(id, parameterId, ruleType, severity, enabled);
+        return new RuleData(id, parameterId, ruleType, severity, enabled, currentVersionId);
     }
+
+    public Long getCurrentVersionId() { return currentVersionId; }
+    public Instant getCreatedAt() { return createdAt; }
+    public Instant getUpdatedAt() { return updatedAt; }
+
+    public void setCurrentVersionId(Long currentVersionId) { this.currentVersionId = currentVersionId; }
+    public void setSeverity(Severity severity) { this.severity = severity; this.updatedAt = Instant.now(); }
+    public void setEnabled(boolean enabled) { this.enabled = enabled; this.updatedAt = Instant.now(); }
+    public void setRuleType(RuleType ruleType) { this.ruleType = ruleType; this.updatedAt = Instant.now(); }
 }

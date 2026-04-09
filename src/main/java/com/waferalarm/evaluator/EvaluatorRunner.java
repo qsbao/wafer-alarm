@@ -13,6 +13,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.stream.Collectors;
+import java.util.stream.StreamSupport;
 
 @Component
 public class EvaluatorRunner {
@@ -25,6 +26,7 @@ public class EvaluatorRunner {
     private final ParameterRepository parameterRepo;
     private final AlarmRepository alarmRepo;
     private final EvalWatermarkRepository watermarkRepo;
+    private final ParameterLimitRepository parameterLimitRepo;
     private final RuleEvaluator ruleEvaluator;
     private final AlarmLifecycle alarmLifecycle;
     private final ExecutorService evaluatorExecutor;
@@ -36,6 +38,7 @@ public class EvaluatorRunner {
             ParameterRepository parameterRepo,
             AlarmRepository alarmRepo,
             EvalWatermarkRepository watermarkRepo,
+            ParameterLimitRepository parameterLimitRepo,
             RuleEvaluator ruleEvaluator,
             AlarmLifecycle alarmLifecycle,
             @Qualifier("evaluatorExecutor") ExecutorService evaluatorExecutor,
@@ -45,6 +48,7 @@ public class EvaluatorRunner {
         this.parameterRepo = parameterRepo;
         this.alarmRepo = alarmRepo;
         this.watermarkRepo = watermarkRepo;
+        this.parameterLimitRepo = parameterLimitRepo;
         this.ruleEvaluator = ruleEvaluator;
         this.alarmLifecycle = alarmLifecycle;
         this.evaluatorExecutor = evaluatorExecutor;
@@ -73,16 +77,26 @@ public class EvaluatorRunner {
 
         List<RuleData> rules = enabledRules.stream().map(RuleEntity::toRuleData).toList();
 
-        Map<Long, LimitData> limits = parameterRepo.findAll().stream()
-                .collect(Collectors.toMap(
-                        ParameterEntity::getId,
-                        p -> new LimitData(p.getId(), p.getDefaultUpperLimit(), p.getDefaultLowerLimit())
-                ));
+        // Load limits from parameter_limit table
+        List<ParameterLimitData> limits = StreamSupport.stream(
+                parameterLimitRepo.findAll().spliterator(), false)
+                .map(ParameterLimitEntity::toData)
+                .collect(Collectors.toList());
+
+        // Add global fallbacks from parameter catalog defaults
+        for (ParameterEntity p : parameterRepo.findAll()) {
+            if (p.getDefaultUpperLimit() != null || p.getDefaultLowerLimit() != null) {
+                // Use negative id to avoid collision with real parameter_limit rows
+                limits.add(new ParameterLimitData(
+                        -p.getId(), p.getId(), Map.of(),
+                        p.getDefaultUpperLimit(), p.getDefaultLowerLimit()));
+            }
+        }
 
         List<MeasurementData> measurementData = measurements.stream()
                 .map(m -> new MeasurementData(
                         m.getParameterId(), m.getWaferId(), m.getValue(),
-                        m.getTs(), m.deriveContextKey()))
+                        m.getTs(), m.deriveContextKey(), m.deriveContextMap()))
                 .toList();
 
         List<AlarmEvent> events = ruleEvaluator.evaluate(rules, measurementData, limits);

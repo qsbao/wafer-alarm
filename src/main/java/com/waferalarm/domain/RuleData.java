@@ -5,5 +5,6 @@ public record RuleData(
         long parameterId,
         RuleType ruleType,
         Severity severity,
-        boolean enabled
+        boolean enabled,
+        Long currentVersionId
 ) {}

@@ -156,7 +156,7 @@ class EvaluatorRunnerIntegrationTest {
                 alarm.getOccurrenceCount(), alarm.getFirstViolationAt(),
                 alarm.getLastViolationAt(), alarm.getLastValue(),
                 alarm.getThresholdValue(), 0,
-                Instant.parse("2099-01-01T00:00:00Z"));
+                Instant.parse("2099-01-01T00:00:00Z"), null);
         alarm.updateFromSnapshot(suppressed);
         alarmRepo.save(alarm);
 

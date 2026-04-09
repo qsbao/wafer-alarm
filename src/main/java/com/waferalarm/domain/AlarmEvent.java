@@ -10,5 +10,6 @@ public record AlarmEvent(
         double violatingValue,
         double thresholdValue,
         Instant violationTime,
-        String waferId
+        String waferId,
+        Long ruleVersionId
 ) {}

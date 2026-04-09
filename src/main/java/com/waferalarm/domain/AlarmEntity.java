@@ -47,6 +47,9 @@ public class AlarmEntity {
     @Column(name = "suppressed_until")
     private Instant suppressedUntil;
 
+    @Column(name = "rule_version_id")
+    private Long ruleVersionId;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -69,6 +72,7 @@ public class AlarmEntity {
         e.thresholdValue = snapshot.thresholdValue();
         e.consecutiveCleanCount = snapshot.consecutiveCleanCount();
         e.suppressedUntil = snapshot.suppressedUntil();
+        e.ruleVersionId = snapshot.ruleVersionId();
         e.createdAt = Instant.now();
         e.updatedAt = Instant.now();
         return e;
@@ -81,6 +85,7 @@ public class AlarmEntity {
         this.lastValue = snapshot.lastValue();
         this.consecutiveCleanCount = snapshot.consecutiveCleanCount();
         this.suppressedUntil = snapshot.suppressedUntil();
+        this.ruleVersionId = snapshot.ruleVersionId();
         this.updatedAt = Instant.now();
     }
 
@@ -89,7 +94,7 @@ public class AlarmEntity {
                 state, severity, occurrenceCount, firstViolationAt,
                 lastViolationAt, lastValue != null ? lastValue : 0.0,
                 thresholdValue != null ? thresholdValue : 0.0,
-                consecutiveCleanCount, suppressedUntil);
+                consecutiveCleanCount, suppressedUntil, ruleVersionId);
     }
 
     public Long getId() { return id; }
@@ -105,5 +110,6 @@ public class AlarmEntity {
     public Double getThresholdValue() { return thresholdValue; }
     public int getConsecutiveCleanCount() { return consecutiveCleanCount; }
     public Instant getSuppressedUntil() { return suppressedUntil; }
+    public Long getRuleVersionId() { return ruleVersionId; }
     public Instant getCreatedAt() { return createdAt; }
 }
