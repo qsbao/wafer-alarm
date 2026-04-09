@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Source Mappings — Wafer Alarm System</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f6fa; color: #333; }
+    .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+    h1 { font-size: 1.5rem; font-weight: 600; margin-bottom: 20px; }
+    .nav-links { font-size: 0.875rem; margin-left: 16px; }
+    .nav-links a { color: #3498db; text-decoration: none; margin-right: 12px; }
+    .card { background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); padding: 20px; margin-bottom: 20px; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.825rem; }
+    th { text-align: left; padding: 10px 12px; border-bottom: 2px solid #eee; color: #666; font-weight: 600; white-space: nowrap; }
+    td { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    tr:hover td { background: #fafbfc; }
+    .btn { padding: 6px 14px; border: 1px solid #ccc; border-radius: 4px; background: #fff; cursor: pointer; font-size: 0.8rem; margin-right: 4px; }
+    .btn:hover { background: #f0f0f0; }
+    .btn-primary { background: #3498db; color: #fff; border-color: #3498db; }
+    .btn-primary:hover { background: #2980b9; }
+    .btn-danger { border-color: #e74c3c; color: #e74c3c; }
+    .btn-danger:hover { background: #fdecea; }
+    .btn-success { border-color: #27ae60; color: #27ae60; }
+    .btn-success:hover { background: #e8f8f0; }
+    .disabled-row td { color: #aaa; }
+    .status-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.7rem; font-weight: 600; }
+    .status-enabled { background: #e8f5e9; color: #2e7d32; }
+    .status-disabled { background: #fbe9e7; color: #c62828; }
+    .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 100; }
+    .modal { background: #fff; padding: 24px; border-radius: 8px; min-width: 600px; max-width: 700px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); max-height: 90vh; overflow-y: auto; }
+    .modal h2 { font-size: 1.1rem; margin-bottom: 16px; }
+    .form-group { margin-bottom: 12px; }
+    .form-group label { display: block; font-size: 0.8rem; color: #666; margin-bottom: 4px; font-weight: 600; }
+    .form-group input, .form-group select, .form-group textarea { width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.875rem; }
+    .form-group textarea { resize: vertical; height: 80px; font-family: monospace; }
+    .form-row { display: flex; gap: 12px; }
+    .form-row .form-group { flex: 1; }
+    .form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+    .error-msg { color: #e74c3c; font-size: 0.8rem; margin-top: 4px; }
+    .empty-state { text-align: center; padding: 48px 20px; color: #888; font-size: 1rem; }
+    .hint { font-size: 0.7rem; color: #999; margin-top: 2px; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useCallback } = React;
+
+    function MappingForm({ initial, sourceSystems, parameters, onSave, onCancel }) {
+      const [form, setForm] = useState(initial || {
+        sourceSystemId: '', parameterId: '', queryTemplate: '',
+        valueColumn: '', watermarkColumn: '', contextColumnMapping: '',
+        pollIntervalSeconds: '300', rowCap: '10000', queryTimeoutSeconds: '30'
+      });
+      const [error, setError] = useState('');
+
+      const handleChange = (field) => (e) => {
+        setForm({ ...form, [field]: e.target.value });
+        setError('');
+      };
+
+      const handleSubmit = async () => {
+        if (!form.sourceSystemId) { setError('Source system is required'); return; }
+        if (!form.parameterId) { setError('Parameter is required'); return; }
+        if (!form.queryTemplate.trim()) { setError('Query template is required'); return; }
+        if (!form.valueColumn.trim()) { setError('Value column is required'); return; }
+        if (!form.watermarkColumn.trim()) { setError('Watermark column is required'); return; }
+        const payload = {
+          sourceSystemId: parseInt(form.sourceSystemId),
+          parameterId: parseInt(form.parameterId),
+          queryTemplate: form.queryTemplate.trim(),
+          valueColumn: form.valueColumn.trim(),
+          watermarkColumn: form.watermarkColumn.trim(),
+          contextColumnMapping: form.contextColumnMapping.trim() || null,
+          pollIntervalSeconds: parseInt(form.pollIntervalSeconds) || 300,
+          rowCap: parseInt(form.rowCap) || 10000,
+          queryTimeoutSeconds: parseInt(form.queryTimeoutSeconds) || 30,
+        };
+        try {
+          await onSave(payload);
+        } catch (e) {
+          setError(e.message || 'Save failed');
+        }
+      };
+
+      return (
+        <div className="modal-overlay" onClick={onCancel}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <h2>{initial ? 'Edit Mapping' : 'New Source Mapping'}</h2>
+            <div className="form-row">
+              <div className="form-group">
+                <label>Source System *</label>
+                <select value={form.sourceSystemId} onChange={handleChange('sourceSystemId')}>
+                  <option value="">-- Select --</option>
+                  {sourceSystems.map(s => <option key={s.id} value={s.id}>{s.name} ({s.host})</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Parameter *</label>
+                <select value={form.parameterId} onChange={handleChange('parameterId')}>
+                  <option value="">-- Select --</option>
+                  {parameters.map(p => <option key={p.id} value={p.id}>{p.name}{p.unit ? ` (${p.unit})` : ''}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="form-group">
+              <label>Query Template *</label>
+              <textarea value={form.queryTemplate} onChange={handleChange('queryTemplate')}
+                placeholder="SELECT wafer_id, value, ts, tool FROM source_table WHERE ts > :watermark_low AND ts <= :watermark_high ORDER BY ts" />
+              <div className="hint">Use :watermark_low and :watermark_high as placeholders</div>
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label>Value Column *</label>
+                <input value={form.valueColumn} onChange={handleChange('valueColumn')} placeholder="e.g. measured_value" />
+              </div>
+              <div className="form-group">
+                <label>Watermark Column *</label>
+                <input value={form.watermarkColumn} onChange={handleChange('watermarkColumn')} placeholder="e.g. ts" />
+              </div>
+            </div>
+            <div className="form-group">
+              <label>Context Column Mapping (JSON)</label>
+              <input value={form.contextColumnMapping} onChange={handleChange('contextColumnMapping')}
+                placeholder='{"tool":"tool_col","recipe":"recipe_col"}' />
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label>Poll Interval (sec)</label>
+                <input type="number" value={form.pollIntervalSeconds} onChange={handleChange('pollIntervalSeconds')} />
+                <div className="hint">Default: 300</div>
+              </div>
+              <div className="form-group">
+                <label>Row Cap</label>
+                <input type="number" value={form.rowCap} onChange={handleChange('rowCap')} />
+                <div className="hint">Default: 10000</div>
+              </div>
+              <div className="form-group">
+                <label>Query Timeout (sec)</label>
+                <input type="number" value={form.queryTimeoutSeconds} onChange={handleChange('queryTimeoutSeconds')} />
+                <div className="hint">Default: 30</div>
+              </div>
+            </div>
+            {error && <div className="error-msg">{error}</div>}
+            <div className="form-actions">
+              <button className="btn" onClick={onCancel}>Cancel</button>
+              <button className="btn btn-primary" onClick={handleSubmit}>{initial ? 'Save' : 'Create'}</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function App() {
+      const [mappings, setMappings] = useState([]);
+      const [sourceSystems, setSourceSystems] = useState([]);
+      const [parameters, setParameters] = useState([]);
+      const [showForm, setShowForm] = useState(false);
+      const [editMapping, setEditMapping] = useState(null);
+
+      const fetchAll = useCallback(async () => {
+        try {
+          const [mRes, ssRes, pRes] = await Promise.all([
+            fetch('/api/source-mappings'),
+            fetch('/api/source-systems'),
+            fetch('/api/parameters'),
+          ]);
+          setMappings(await mRes.json());
+          setSourceSystems(await ssRes.json());
+          setParameters(await pRes.json());
+        } catch (e) {
+          console.error('Failed to fetch:', e);
+        }
+      }, []);
+
+      useEffect(() => { fetchAll(); }, [fetchAll]);
+
+      const ssMap = Object.fromEntries(sourceSystems.map(s => [s.id, s]));
+      const paramMap = Object.fromEntries(parameters.map(p => [p.id, p]));
+
+      const handleCreate = async (payload) => {
+        const res = await fetch('/api/source-mappings', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) throw new Error('Create failed');
+        setShowForm(false);
+        fetchAll();
+      };
+
+      const handleUpdate = async (payload) => {
+        const res = await fetch(`/api/source-mappings/${editMapping.id}`, {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) throw new Error('Update failed');
+        setEditMapping(null);
+        fetchAll();
+      };
+
+      const handleToggle = async (id, enabled) => {
+        const action = enabled ? 'disable' : 'enable';
+        await fetch(`/api/source-mappings/${id}/${action}`, { method: 'POST' });
+        fetchAll();
+      };
+
+      const handleEdit = (m) => {
+        setEditMapping({
+          ...m,
+          sourceSystemId: String(m.sourceSystemId),
+          parameterId: String(m.parameterId),
+          pollIntervalSeconds: String(m.pollIntervalSeconds),
+          rowCap: String(m.rowCap),
+          queryTimeoutSeconds: String(m.queryTimeoutSeconds),
+          contextColumnMapping: m.contextColumnMapping || '',
+        });
+      };
+
+      return (
+        <div className="container">
+          <h1>
+            Source Mappings
+            <span className="nav-links">
+              <a href="/">Alarms</a>
+              <a href="/trend.html">Trend</a>
+              <a href="/parameters.html">Parameters</a>
+              <a href="/source-systems.html">Source Systems</a>
+            </span>
+          </h1>
+          <div style={{ marginBottom: 16 }}>
+            <button className="btn btn-primary" onClick={() => setShowForm(true)}>New Mapping</button>
+          </div>
+          <div className="card">
+            {mappings.length === 0 ? (
+              <div className="empty-state">No source mappings configured. Click "New Mapping" to add one.</div>
+            ) : (
+              <table>
+                <thead>
+                  <tr>
+                    <th>ID</th><th>Source System</th><th>Parameter</th><th>Value Col</th>
+                    <th>Watermark Col</th><th>Poll (s)</th><th>Row Cap</th><th>Timeout (s)</th>
+                    <th>Status</th><th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {mappings.map(m => (
+                    <tr key={m.id} className={!m.enabled ? 'disabled-row' : ''}>
+                      <td>{m.id}</td>
+                      <td>{ssMap[m.sourceSystemId]?.name || m.sourceSystemId}</td>
+                      <td>{paramMap[m.parameterId]?.name || m.parameterId}</td>
+                      <td>{m.valueColumn}</td>
+                      <td>{m.watermarkColumn}</td>
+                      <td>{m.pollIntervalSeconds}</td>
+                      <td>{m.rowCap}</td>
+                      <td>{m.queryTimeoutSeconds}</td>
+                      <td>
+                        <span className={`status-badge ${m.enabled ? 'status-enabled' : 'status-disabled'}`}>
+                          {m.enabled ? 'Enabled' : 'Disabled'}
+                        </span>
+                      </td>
+                      <td>
+                        <button className="btn" onClick={() => handleEdit(m)}>Edit</button>
+                        <button className={`btn ${m.enabled ? 'btn-danger' : 'btn-success'}`}
+                                onClick={() => handleToggle(m.id, m.enabled)}>
+                          {m.enabled ? 'Disable' : 'Enable'}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+          {showForm && <MappingForm sourceSystems={sourceSystems} parameters={parameters}
+            onSave={handleCreate} onCancel={() => setShowForm(false)} />}
+          {editMapping && <MappingForm initial={editMapping} sourceSystems={sourceSystems} parameters={parameters}
+            onSave={handleUpdate} onCancel={() => setEditMapping(null)} />}
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
