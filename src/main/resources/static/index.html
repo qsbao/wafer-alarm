@@ -25,6 +25,19 @@
     .severity-INFO { background: #3498db; }
     .state-badge { font-size: 0.75rem; font-weight: 500; }
     .refresh-info { font-size: 0.75rem; color: #999; margin-left: 12px; font-weight: 400; }
+    .action-btn { padding: 4px 10px; border: 1px solid #ccc; border-radius: 4px; background: #fff; cursor: pointer; font-size: 0.75rem; margin-right: 4px; }
+    .action-btn:hover { background: #f0f0f0; }
+    .action-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .action-btn.ack { border-color: #3498db; color: #3498db; }
+    .action-btn.resolve { border-color: #27ae60; color: #27ae60; }
+    .action-btn.suppress { border-color: #f39c12; color: #f39c12; }
+    .suppress-modal { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 100; }
+    .suppress-modal-content { background: #fff; padding: 24px; border-radius: 8px; min-width: 320px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+    .suppress-modal-content h3 { margin-bottom: 16px; font-size: 1rem; }
+    .suppress-modal-content select, .suppress-modal-content button { padding: 8px 16px; font-size: 0.875rem; border-radius: 4px; border: 1px solid #ccc; }
+    .suppress-modal-content button { cursor: pointer; margin-left: 8px; }
+    .suppress-modal-content .btn-primary { background: #f39c12; color: #fff; border-color: #f39c12; }
+    .suppress-modal-content .btn-cancel { background: #fff; }
   </style>
 </head>
 <body>
@@ -72,7 +85,36 @@
       return <div ref={chartRef} style={{ width: '100%', height: 220 }} />;
     }
 
-    function AlarmTable({ alarms }) {
+    function SuppressModal({ alarmId, onConfirm, onCancel }) {
+      const [duration, setDuration] = useState('1h');
+      const durations = { '1h': 1, '4h': 4, '8h': 8, '24h': 24, '72h': 72 };
+
+      const handleConfirm = () => {
+        const hours = durations[duration];
+        const until = new Date(Date.now() + hours * 3600 * 1000).toISOString();
+        onConfirm(alarmId, until);
+      };
+
+      return (
+        <div className="suppress-modal" onClick={onCancel}>
+          <div className="suppress-modal-content" onClick={e => e.stopPropagation()}>
+            <h3>Suppress Alarm</h3>
+            <div style={{ marginBottom: 16 }}>
+              <label>Duration: </label>
+              <select value={duration} onChange={e => setDuration(e.target.value)}>
+                {Object.keys(durations).map(d => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <button className="btn-cancel" onClick={onCancel}>Cancel</button>
+              <button className="btn-primary" onClick={handleConfirm}>Suppress</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function AlarmTable({ alarms, onAction }) {
       if (alarms.length === 0) {
         return <div className="empty-state">No active alarms</div>;
       }
@@ -88,6 +130,7 @@
               <th>Occurrences</th>
               <th>Last Violation</th>
               <th>State</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -95,12 +138,23 @@
               <tr key={a.id ?? i}>
                 <td><span className={`severity-badge severity-${a.severity}`}>{a.severity}</span></td>
                 <td>{a.parameterId}</td>
-                <td>{a.context}</td>
-                <td>{a.value}</td>
-                <td>{a.threshold}</td>
-                <td>{a.occurrences}</td>
-                <td>{a.lastViolation ? new Date(a.lastViolation).toLocaleString() : '-'}</td>
+                <td>{a.contextKey}</td>
+                <td>{a.lastValue}</td>
+                <td>{a.thresholdValue}</td>
+                <td>{a.occurrenceCount}</td>
+                <td>{a.lastViolationAt ? new Date(a.lastViolationAt).toLocaleString() : '-'}</td>
                 <td className="state-badge">{a.state}</td>
+                <td>
+                  {a.state === 'FIRING' && (
+                    <button className="action-btn ack" onClick={() => onAction('acknowledge', a.id)}>Ack</button>
+                  )}
+                  {(a.state === 'FIRING' || a.state === 'ACKNOWLEDGED') && (
+                    <button className="action-btn resolve" onClick={() => onAction('resolve', a.id)}>Resolve</button>
+                  )}
+                  {(a.state === 'FIRING' || a.state === 'ACKNOWLEDGED') && (
+                    <button className="action-btn suppress" onClick={() => onAction('suppress', a.id)}>Suppress</button>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -111,6 +165,7 @@
     function App() {
       const [alarms, setAlarms] = useState([]);
       const [lastRefresh, setLastRefresh] = useState(null);
+      const [suppressAlarmId, setSuppressAlarmId] = useState(null);
 
       const fetchAlarms = useCallback(async () => {
         try {
@@ -120,7 +175,7 @@
           const sorted = [...data].sort((a, b) => {
             const sev = (SEVERITY_ORDER[a.severity] ?? 99) - (SEVERITY_ORDER[b.severity] ?? 99);
             if (sev !== 0) return sev;
-            return new Date(b.lastViolation || 0) - new Date(a.lastViolation || 0);
+            return new Date(b.lastViolationAt || 0) - new Date(a.lastViolationAt || 0);
           });
           setAlarms(sorted);
           setLastRefresh(new Date());
@@ -135,6 +190,43 @@
         return () => clearInterval(id);
       }, [fetchAlarms]);
 
+      const handleAction = async (action, alarmId) => {
+        if (action === 'suppress') {
+          setSuppressAlarmId(alarmId);
+          return;
+        }
+        try {
+          const res = await fetch(`/api/alarms/${alarmId}/${action}`, { method: 'POST' });
+          if (!res.ok) {
+            const err = await res.json();
+            alert(err.error || 'Action failed');
+            return;
+          }
+          fetchAlarms();
+        } catch (e) {
+          console.error('Action failed:', e);
+        }
+      };
+
+      const handleSuppress = async (alarmId, until) => {
+        setSuppressAlarmId(null);
+        try {
+          const res = await fetch(`/api/alarms/${alarmId}/suppress`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ until }),
+          });
+          if (!res.ok) {
+            const err = await res.json();
+            alert(err.error || 'Suppress failed');
+            return;
+          }
+          fetchAlarms();
+        } catch (e) {
+          console.error('Suppress failed:', e);
+        }
+      };
+
       return (
         <div className="container">
           <h1>
@@ -145,8 +237,15 @@
             <SeverityChart alarms={alarms} />
           </div>
           <div className="table-card">
-            <AlarmTable alarms={alarms} />
+            <AlarmTable alarms={alarms} onAction={handleAction} />
           </div>
+          {suppressAlarmId != null && (
+            <SuppressModal
+              alarmId={suppressAlarmId}
+              onConfirm={handleSuppress}
+              onCancel={() => setSuppressAlarmId(null)}
+            />
+          )}
         </div>
       );
     }

@@ -16,7 +16,8 @@ public record AlarmDto(
         Instant lastViolationAt,
         Double lastValue,
         Double thresholdValue,
-        Instant createdAt
+        Instant createdAt,
+        Instant suppressedUntil
 ) {
     public static AlarmDto from(AlarmEntity e) {
         return new AlarmDto(
@@ -24,6 +25,7 @@ public record AlarmDto(
                 e.getContextKey(), e.getState().name(), e.getSeverity().name(),
                 e.getOccurrenceCount(), e.getFirstViolationAt(),
                 e.getLastViolationAt(), e.getLastValue(),
-                e.getThresholdValue(), e.getCreatedAt());
+                e.getThresholdValue(), e.getCreatedAt(),
+                e.getSuppressedUntil());
     }
 }

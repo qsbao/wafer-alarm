@@ -13,17 +13,21 @@ public record AlarmSnapshot(
         Instant firstViolationAt,
         Instant lastViolationAt,
         double lastValue,
-        double thresholdValue
+        double thresholdValue,
+        int consecutiveCleanCount,
+        Instant suppressedUntil
 ) {
     public AlarmSnapshot withState(AlarmState newState) {
         return new AlarmSnapshot(alarmId, ruleId, parameterId, contextKey,
                 newState, severity, occurrenceCount, firstViolationAt,
-                lastViolationAt, lastValue, thresholdValue);
+                lastViolationAt, lastValue, thresholdValue,
+                consecutiveCleanCount, suppressedUntil);
     }
 
     public AlarmSnapshot withOccurrence(double value, Instant violationTime) {
         return new AlarmSnapshot(alarmId, ruleId, parameterId, contextKey,
                 state, severity, occurrenceCount + 1, firstViolationAt,
-                violationTime, value, thresholdValue);
+                violationTime, value, thresholdValue,
+                0, suppressedUntil);
     }
 }

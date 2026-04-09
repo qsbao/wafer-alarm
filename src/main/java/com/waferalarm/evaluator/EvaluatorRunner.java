@@ -5,12 +5,12 @@ import com.waferalarm.domain.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.stream.Collectors;
 
@@ -28,6 +28,7 @@ public class EvaluatorRunner {
     private final RuleEvaluator ruleEvaluator;
     private final AlarmLifecycle alarmLifecycle;
     private final ExecutorService evaluatorExecutor;
+    private final int autoCloseThreshold;
 
     public EvaluatorRunner(
             MeasurementRepository measurementRepo,
@@ -37,7 +38,8 @@ public class EvaluatorRunner {
             EvalWatermarkRepository watermarkRepo,
             RuleEvaluator ruleEvaluator,
             AlarmLifecycle alarmLifecycle,
-            @Qualifier("evaluatorExecutor") ExecutorService evaluatorExecutor) {
+            @Qualifier("evaluatorExecutor") ExecutorService evaluatorExecutor,
+            @Value("${app.alarm.auto-close-threshold:3}") int autoCloseThreshold) {
         this.measurementRepo = measurementRepo;
         this.ruleRepo = ruleRepo;
         this.parameterRepo = parameterRepo;
@@ -46,6 +48,7 @@ public class EvaluatorRunner {
         this.ruleEvaluator = ruleEvaluator;
         this.alarmLifecycle = alarmLifecycle;
         this.evaluatorExecutor = evaluatorExecutor;
+        this.autoCloseThreshold = autoCloseThreshold;
     }
 
     public void tick() {
@@ -56,7 +59,6 @@ public class EvaluatorRunner {
         Instant queryFrom = strictWatermark.minus(10, ChronoUnit.MINUTES);
         List<MeasurementEntity> allFetched = measurementRepo.findIngestedAfter(queryFrom);
 
-        // Only evaluate measurements newer than the strict watermark
         List<MeasurementEntity> measurements = allFetched.stream()
                 .filter(m -> m.getIngestedAt().isAfter(strictWatermark))
                 .toList();
@@ -84,22 +86,60 @@ public class EvaluatorRunner {
                 .toList();
 
         List<AlarmEvent> events = ruleEvaluator.evaluate(rules, measurementData, limits);
+        Instant now = Instant.now();
 
+        // Track which (ruleId, contextKey) pairs had violations
+        Set<String> violatedKeys = events.stream()
+                .map(e -> e.ruleId() + "|" + e.contextKey())
+                .collect(Collectors.toSet());
+
+        // Process violations
         for (AlarmEvent event : events) {
-            List<AlarmState> openStates = List.of(AlarmState.FIRING, AlarmState.ACKNOWLEDGED);
+            List<AlarmState> openStates = List.of(
+                    AlarmState.FIRING, AlarmState.ACKNOWLEDGED, AlarmState.SUPPRESSED);
             AlarmEntity existing = alarmRepo
                     .findByRuleIdAndContextKeyAndStateIn(event.ruleId(), event.contextKey(), openStates)
                     .orElse(null);
 
             AlarmSnapshot currentSnapshot = existing != null ? existing.toSnapshot() : null;
-            AlarmSnapshot newSnapshot = alarmLifecycle.apply(event, currentSnapshot);
+            AlarmSnapshot newSnapshot = alarmLifecycle.apply(event, currentSnapshot, now);
 
             if (existing != null && newSnapshot.alarmId() != null) {
                 existing.updateFromSnapshot(newSnapshot);
                 alarmRepo.save(existing);
-            } else {
+            } else if (newSnapshot.alarmId() == null) {
                 alarmRepo.save(AlarmEntity.fromSnapshot(newSnapshot));
             }
+            // else: suppressed alarm returned unchanged, already saved
+        }
+
+        // Auto-close: for each open alarm, check if measurements arrived for
+        // same (parameter, context-key) but did NOT violate the rule
+        Set<String> measurementContextKeys = measurementData.stream()
+                .map(m -> m.parameterId() + "|" + m.contextKey())
+                .collect(Collectors.toSet());
+
+        // Build parameter→rules mapping for context key lookup
+        Map<Long, List<RuleData>> rulesByParameter = rules.stream()
+                .collect(Collectors.groupingBy(RuleData::parameterId));
+
+        List<AlarmState> openStates = List.of(AlarmState.FIRING, AlarmState.ACKNOWLEDGED);
+        List<AlarmEntity> openAlarms = alarmRepo.findByStateIn(openStates);
+
+        for (AlarmEntity alarmEntity : openAlarms) {
+            String paramContextKey = alarmEntity.getParameterId() + "|" + alarmEntity.getContextKey();
+            String ruleContextKey = alarmEntity.getRuleId() + "|" + alarmEntity.getContextKey();
+
+            // Only consider if we got measurements for this parameter+context
+            if (!measurementContextKeys.contains(paramContextKey)) continue;
+            // Skip if this rule+context had a violation (already handled above)
+            if (violatedKeys.contains(ruleContextKey)) continue;
+
+            // Clean wafer for this alarm
+            AlarmSnapshot updated = alarmLifecycle.onCleanWafer(
+                    alarmEntity.toSnapshot(), autoCloseThreshold);
+            alarmEntity.updateFromSnapshot(updated);
+            alarmRepo.save(alarmEntity);
         }
 
         Instant maxIngestedAt = measurements.stream()

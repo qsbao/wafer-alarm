@@ -102,4 +102,71 @@ class EvaluatorRunnerIntegrationTest {
         assertThat(alarms).hasSize(1);
         assertThat(alarms.getFirst().getOccurrenceCount()).isEqualTo(2);
     }
+
+    @Test
+    void alarm_auto_closes_after_consecutive_clean_wafers() {
+        var param = parameterRepo.save(new ParameterEntity("CD", "nm", 100.0, null));
+        ruleRepo.save(new RuleEntity(param.getId(), RuleType.UPPER_THRESHOLD, Severity.WARNING));
+
+        // First: create an alarm with a violating measurement
+        measurementRepo.save(new MeasurementEntity(param.getId(), "W010", 105.0,
+                Instant.parse("2026-01-01T00:00:00Z"), "TOOL-A", "RCP-1", "PROD-X", "LOT-1"));
+        runner.tick();
+        assertThat(alarmRepo.findAll()).hasSize(1);
+        assertThat(alarmRepo.findAll().getFirst().getState()).isEqualTo(AlarmState.FIRING);
+
+        // 3 consecutive clean wafers (default threshold = 3)
+        measurementRepo.save(new MeasurementEntity(param.getId(), "W011", 95.0,
+                Instant.parse("2026-01-01T01:00:00Z"), "TOOL-A", "RCP-1", "PROD-X", "LOT-1"));
+        runner.tick();
+        assertThat(alarmRepo.findAll().getFirst().getConsecutiveCleanCount()).isEqualTo(1);
+
+        measurementRepo.save(new MeasurementEntity(param.getId(), "W012", 90.0,
+                Instant.parse("2026-01-01T02:00:00Z"), "TOOL-A", "RCP-1", "PROD-X", "LOT-1"));
+        runner.tick();
+        assertThat(alarmRepo.findAll().getFirst().getConsecutiveCleanCount()).isEqualTo(2);
+
+        measurementRepo.save(new MeasurementEntity(param.getId(), "W013", 88.0,
+                Instant.parse("2026-01-01T03:00:00Z"), "TOOL-A", "RCP-1", "PROD-X", "LOT-1"));
+        runner.tick();
+
+        AlarmEntity alarm = alarmRepo.findAll().getFirst();
+        assertThat(alarm.getState()).isEqualTo(AlarmState.RESOLVED);
+        assertThat(alarm.getConsecutiveCleanCount()).isEqualTo(3);
+    }
+
+    @Test
+    void suppressed_alarm_does_not_refire_within_window() {
+        var param = parameterRepo.save(new ParameterEntity("CD", "nm", 100.0, null));
+        ruleRepo.save(new RuleEntity(param.getId(), RuleType.UPPER_THRESHOLD, Severity.WARNING));
+
+        // Create alarm
+        measurementRepo.save(new MeasurementEntity(param.getId(), "W020", 105.0,
+                Instant.parse("2026-01-01T00:00:00Z"), "TOOL-A", "RCP-1", "PROD-X", "LOT-1"));
+        runner.tick();
+
+        // Suppress until far future
+        AlarmEntity alarm = alarmRepo.findAll().getFirst();
+        alarm.updateFromSnapshot(alarm.toSnapshot()
+                .withState(AlarmState.SUPPRESSED));
+        // Set suppressed_until manually on the entity
+        AlarmSnapshot suppressed = new AlarmSnapshot(
+                alarm.getId(), alarm.getRuleId(), alarm.getParameterId(),
+                alarm.getContextKey(), AlarmState.SUPPRESSED, alarm.getSeverity(),
+                alarm.getOccurrenceCount(), alarm.getFirstViolationAt(),
+                alarm.getLastViolationAt(), alarm.getLastValue(),
+                alarm.getThresholdValue(), 0,
+                Instant.parse("2099-01-01T00:00:00Z"));
+        alarm.updateFromSnapshot(suppressed);
+        alarmRepo.save(alarm);
+
+        // Another violation arrives — should not create new alarm
+        measurementRepo.save(new MeasurementEntity(param.getId(), "W021", 110.0,
+                Instant.parse("2026-01-01T01:00:00Z"), "TOOL-A", "RCP-1", "PROD-X", "LOT-1"));
+        runner.tick();
+
+        List<AlarmEntity> alarms = alarmRepo.findAll();
+        assertThat(alarms).hasSize(1);
+        assertThat(alarms.getFirst().getState()).isEqualTo(AlarmState.SUPPRESSED);
+    }
 }

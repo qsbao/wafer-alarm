@@ -41,6 +41,12 @@ public class AlarmEntity {
     @Column(name = "threshold_value")
     private Double thresholdValue;
 
+    @Column(name = "consecutive_clean_count", nullable = false)
+    private int consecutiveCleanCount;
+
+    @Column(name = "suppressed_until")
+    private Instant suppressedUntil;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -61,6 +67,8 @@ public class AlarmEntity {
         e.lastViolationAt = snapshot.lastViolationAt();
         e.lastValue = snapshot.lastValue();
         e.thresholdValue = snapshot.thresholdValue();
+        e.consecutiveCleanCount = snapshot.consecutiveCleanCount();
+        e.suppressedUntil = snapshot.suppressedUntil();
         e.createdAt = Instant.now();
         e.updatedAt = Instant.now();
         return e;
@@ -71,6 +79,8 @@ public class AlarmEntity {
         this.occurrenceCount = snapshot.occurrenceCount();
         this.lastViolationAt = snapshot.lastViolationAt();
         this.lastValue = snapshot.lastValue();
+        this.consecutiveCleanCount = snapshot.consecutiveCleanCount();
+        this.suppressedUntil = snapshot.suppressedUntil();
         this.updatedAt = Instant.now();
     }
 
@@ -78,7 +88,8 @@ public class AlarmEntity {
         return new AlarmSnapshot(id, ruleId, parameterId, contextKey,
                 state, severity, occurrenceCount, firstViolationAt,
                 lastViolationAt, lastValue != null ? lastValue : 0.0,
-                thresholdValue != null ? thresholdValue : 0.0);
+                thresholdValue != null ? thresholdValue : 0.0,
+                consecutiveCleanCount, suppressedUntil);
     }
 
     public Long getId() { return id; }
@@ -92,5 +103,7 @@ public class AlarmEntity {
     public Instant getLastViolationAt() { return lastViolationAt; }
     public Double getLastValue() { return lastValue; }
     public Double getThresholdValue() { return thresholdValue; }
+    public int getConsecutiveCleanCount() { return consecutiveCleanCount; }
+    public Instant getSuppressedUntil() { return suppressedUntil; }
     public Instant getCreatedAt() { return createdAt; }
 }
