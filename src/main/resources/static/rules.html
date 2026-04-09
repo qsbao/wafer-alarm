@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Rule Authoring — Wafer Alarm System</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f6fa; color: #333; }
+    .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+    h1 { font-size: 1.5rem; font-weight: 600; margin-bottom: 20px; }
+    h2 { font-size: 1.1rem; font-weight: 600; margin-bottom: 12px; }
+    .nav-links { font-size: 0.875rem; margin-left: 16px; }
+    .nav-links a { color: #3498db; text-decoration: none; margin-right: 12px; }
+    .card { background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); padding: 20px; margin-bottom: 20px; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+    th { text-align: left; padding: 10px 12px; border-bottom: 2px solid #eee; color: #666; font-weight: 600; white-space: nowrap; }
+    td { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; }
+    tr:hover td { background: #fafbfc; }
+    .btn { padding: 6px 14px; border: 1px solid #ccc; border-radius: 4px; background: #fff; cursor: pointer; font-size: 0.8rem; margin-right: 4px; }
+    .btn:hover { background: #f0f0f0; }
+    .btn-primary { background: #3498db; color: #fff; border-color: #3498db; }
+    .btn-primary:hover { background: #2980b9; }
+    .btn-danger { border-color: #e74c3c; color: #e74c3c; }
+    .btn-danger:hover { background: #fdecea; }
+    .btn-success { border-color: #27ae60; color: #27ae60; }
+    .btn-success:hover { background: #e8f5e9; }
+    .disabled-row td { color: #aaa; }
+    .status-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.7rem; font-weight: 600; }
+    .status-enabled { background: #e8f5e9; color: #2e7d32; }
+    .status-disabled { background: #fbe9e7; color: #c62828; }
+    .severity-CRITICAL { color: #c62828; font-weight: 600; }
+    .severity-WARNING { color: #e65100; font-weight: 600; }
+    .severity-INFO { color: #1565c0; }
+    .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 100; }
+    .modal { background: #fff; padding: 24px; border-radius: 8px; min-width: 450px; max-width: 600px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+    .modal h2 { font-size: 1.1rem; margin-bottom: 16px; }
+    .form-group { margin-bottom: 12px; }
+    .form-group label { display: block; font-size: 0.8rem; color: #666; margin-bottom: 4px; font-weight: 600; }
+    .form-group input, .form-group select { width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.875rem; }
+    .form-row { display: flex; gap: 12px; }
+    .form-row .form-group { flex: 1; }
+    .form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+    .error-msg { color: #e74c3c; font-size: 0.8rem; margin-top: 4px; }
+    .empty-state { text-align: center; padding: 48px 20px; color: #888; font-size: 1rem; }
+    .tabs { display: flex; gap: 0; margin-bottom: 20px; }
+    .tab { padding: 10px 20px; border: 1px solid #ddd; background: #f5f6fa; cursor: pointer; font-size: 0.875rem; }
+    .tab:first-child { border-radius: 4px 0 0 4px; }
+    .tab:last-child { border-radius: 0 4px 4px 0; }
+    .tab.active { background: #3498db; color: #fff; border-color: #3498db; }
+    .version-list { max-height: 300px; overflow-y: auto; }
+    .version-item { padding: 8px 12px; border-bottom: 1px solid #f0f0f0; font-size: 0.825rem; }
+    .version-item:last-child { border-bottom: none; }
+    .version-meta { color: #888; font-size: 0.75rem; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useCallback } = React;
+
+    function RuleForm({ parameters, onSave, onCancel }) {
+      const [form, setForm] = useState({
+        parameterId: '', ruleType: 'UPPER_THRESHOLD', severity: 'WARNING', author: ''
+      });
+      const [error, setError] = useState('');
+
+      const handleChange = (field) => (e) => {
+        setForm({ ...form, [field]: e.target.value });
+        setError('');
+      };
+
+      const handleSubmit = async () => {
+        if (!form.parameterId) { setError('Parameter is required'); return; }
+        if (!form.author.trim()) { setError('Author is required'); return; }
+        try {
+          await onSave({
+            parameterId: parseInt(form.parameterId),
+            ruleType: form.ruleType,
+            severity: form.severity,
+            author: form.author.trim()
+          });
+        } catch (e) {
+          setError(e.message || 'Save failed');
+        }
+      };
+
+      return (
+        <div className="modal-overlay" onClick={onCancel}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <h2>New Threshold Rule</h2>
+            <div className="form-group">
+              <label>Parameter *</label>
+              <select value={form.parameterId} onChange={handleChange('parameterId')}>
+                <option value="">-- Select parameter --</option>
+                {parameters.map(p => (
+                  <option key={p.id} value={p.id}>{p.name}{p.unit ? ` (${p.unit})` : ''}</option>
+                ))}
+              </select>
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label>Threshold Type *</label>
+                <select value={form.ruleType} onChange={handleChange('ruleType')}>
+                  <option value="UPPER_THRESHOLD">Upper Threshold</option>
+                  <option value="LOWER_THRESHOLD">Lower Threshold</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Severity *</label>
+                <select value={form.severity} onChange={handleChange('severity')}>
+                  <option value="CRITICAL">Critical</option>
+                  <option value="WARNING">Warning</option>
+                  <option value="INFO">Info</option>
+                </select>
+              </div>
+            </div>
+            <div className="form-group">
+              <label>Author *</label>
+              <input value={form.author} onChange={handleChange('author')} placeholder="Your name" />
+            </div>
+            {error && <div className="error-msg">{error}</div>}
+            <div className="form-actions">
+              <button className="btn" onClick={onCancel}>Cancel</button>
+              <button className="btn btn-primary" onClick={handleSubmit}>Create Rule</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function VersionHistory({ ruleId, onClose }) {
+      const [versions, setVersions] = useState([]);
+
+      useEffect(() => {
+        fetch(`/api/rules/${ruleId}/versions`)
+          .then(r => r.json())
+          .then(setVersions)
+          .catch(console.error);
+      }, [ruleId]);
+
+      return (
+        <div className="modal-overlay" onClick={onClose}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <h2>Version History (Rule #{ruleId})</h2>
+            <div className="version-list">
+              {versions.map(v => (
+                <div key={v.id} className="version-item">
+                  <div>
+                    <strong>v{v.id}</strong> — {v.ruleType.replace('_', ' ')} / <span className={`severity-${v.severity}`}>{v.severity}</span>
+                    {' '}{v.enabled ? '(enabled)' : '(disabled)'}
+                  </div>
+                  <div className="version-meta">
+                    by {v.author} at {new Date(v.createdAt).toLocaleString()}
+                  </div>
+                </div>
+              ))}
+              {versions.length === 0 && <div className="empty-state">No versions found</div>}
+            </div>
+            <div className="form-actions">
+              <button className="btn" onClick={onClose}>Close</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function LimitForm({ parameters, onSave, onCancel }) {
+      const [form, setForm] = useState({
+        parameterId: '', contextMatchJson: '{}', upperLimit: '', lowerLimit: ''
+      });
+      const [error, setError] = useState('');
+
+      const handleChange = (field) => (e) => {
+        setForm({ ...form, [field]: e.target.value });
+        setError('');
+      };
+
+      const handleSubmit = async () => {
+        if (!form.parameterId) { setError('Parameter is required'); return; }
+        try {
+          JSON.parse(form.contextMatchJson);
+        } catch {
+          setError('Context match must be valid JSON'); return;
+        }
+        try {
+          await onSave({
+            parameterId: parseInt(form.parameterId),
+            contextMatchJson: form.contextMatchJson,
+            upperLimit: form.upperLimit !== '' ? parseFloat(form.upperLimit) : null,
+            lowerLimit: form.lowerLimit !== '' ? parseFloat(form.lowerLimit) : null,
+          });
+        } catch (e) {
+          setError(e.message || 'Save failed');
+        }
+      };
+
+      return (
+        <div className="modal-overlay" onClick={onCancel}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <h2>New Parameter Limit</h2>
+            <div className="form-group">
+              <label>Parameter *</label>
+              <select value={form.parameterId} onChange={handleChange('parameterId')}>
+                <option value="">-- Select parameter --</option>
+                {parameters.map(p => (
+                  <option key={p.id} value={p.id}>{p.name}{p.unit ? ` (${p.unit})` : ''}</option>
+                ))}
+              </select>
+            </div>
+            <div className="form-group">
+              <label>Context Match (JSON)</label>
+              <input value={form.contextMatchJson} onChange={handleChange('contextMatchJson')}
+                     placeholder='e.g. {"tool":"TOOL-A"} or {} for global' />
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label>Lower Limit</label>
+                <input type="number" step="any" value={form.lowerLimit} onChange={handleChange('lowerLimit')} />
+              </div>
+              <div className="form-group">
+                <label>Upper Limit</label>
+                <input type="number" step="any" value={form.upperLimit} onChange={handleChange('upperLimit')} />
+              </div>
+            </div>
+            {error && <div className="error-msg">{error}</div>}
+            <div className="form-actions">
+              <button className="btn" onClick={onCancel}>Cancel</button>
+              <button className="btn btn-primary" onClick={handleSubmit}>Create Limit</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function App() {
+      const [tab, setTab] = useState('rules');
+      const [rules, setRules] = useState([]);
+      const [limits, setLimits] = useState([]);
+      const [parameters, setParameters] = useState([]);
+      const [showRuleForm, setShowRuleForm] = useState(false);
+      const [showLimitForm, setShowLimitForm] = useState(false);
+      const [showVersions, setShowVersions] = useState(null);
+
+      const paramMap = {};
+      parameters.forEach(p => { paramMap[p.id] = p; });
+
+      const fetchAll = useCallback(async () => {
+        try {
+          const [rulesRes, limitsRes, paramsRes] = await Promise.all([
+            fetch('/api/rules'), fetch('/api/parameter-limits'), fetch('/api/parameters')
+          ]);
+          setRules(await rulesRes.json());
+          setLimits(await limitsRes.json());
+          setParameters(await paramsRes.json());
+        } catch (e) {
+          console.error('Fetch error:', e);
+        }
+      }, []);
+
+      useEffect(() => { fetchAll(); }, [fetchAll]);
+
+      const createRule = async (payload) => {
+        const res = await fetch('/api/rules', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) throw new Error('Create failed');
+        setShowRuleForm(false);
+        fetchAll();
+      };
+
+      const toggleRule = async (rule) => {
+        const action = rule.enabled ? 'disable' : 'enable';
+        await fetch(`/api/rules/${rule.id}/${action}`, { method: 'POST' });
+        fetchAll();
+      };
+
+      const createLimit = async (payload) => {
+        const res = await fetch('/api/parameter-limits', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) throw new Error('Create failed');
+        setShowLimitForm(false);
+        fetchAll();
+      };
+
+      const deleteLimit = async (id) => {
+        if (!confirm('Delete this limit?')) return;
+        await fetch(`/api/parameter-limits/${id}`, { method: 'DELETE' });
+        fetchAll();
+      };
+
+      return (
+        <div className="container">
+          <h1>
+            Rule Authoring
+            <span className="nav-links">
+              <a href="/">Alarms</a>
+              <a href="/parameters.html">Parameters</a>
+              <a href="/trend.html">Trend</a>
+              <a href="/source-systems.html">Source Systems</a>
+              <a href="/source-mappings.html">Mappings</a>
+            </span>
+          </h1>
+
+          <div className="tabs">
+            <div className={`tab ${tab === 'rules' ? 'active' : ''}`} onClick={() => setTab('rules')}>Rules</div>
+            <div className={`tab ${tab === 'limits' ? 'active' : ''}`} onClick={() => setTab('limits')}>Parameter Limits</div>
+          </div>
+
+          {tab === 'rules' && (
+            <>
+              <div style={{ marginBottom: 16 }}>
+                <button className="btn btn-primary" onClick={() => setShowRuleForm(true)}>New Rule</button>
+              </div>
+              <div className="card">
+                {rules.length === 0 ? (
+                  <div className="empty-state">No rules defined. Click "New Rule" to create one.</div>
+                ) : (
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>ID</th>
+                        <th>Parameter</th>
+                        <th>Type</th>
+                        <th>Severity</th>
+                        <th>Status</th>
+                        <th>Version</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rules.map(r => (
+                        <tr key={r.id} className={!r.enabled ? 'disabled-row' : ''}>
+                          <td>{r.id}</td>
+                          <td>{paramMap[r.parameterId]?.name || `#${r.parameterId}`}</td>
+                          <td>{r.ruleType.replace('_', ' ')}</td>
+                          <td><span className={`severity-${r.severity}`}>{r.severity}</span></td>
+                          <td>
+                            <span className={`status-badge ${r.enabled ? 'status-enabled' : 'status-disabled'}`}>
+                              {r.enabled ? 'Enabled' : 'Disabled'}
+                            </span>
+                          </td>
+                          <td>{r.currentVersionId || '-'}</td>
+                          <td>
+                            <button className={`btn ${r.enabled ? 'btn-danger' : 'btn-success'}`}
+                                    onClick={() => toggleRule(r)}>
+                              {r.enabled ? 'Disable' : 'Enable'}
+                            </button>
+                            <button className="btn" onClick={() => setShowVersions(r.id)}>History</button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </>
+          )}
+
+          {tab === 'limits' && (
+            <>
+              <div style={{ marginBottom: 16 }}>
+                <button className="btn btn-primary" onClick={() => setShowLimitForm(true)}>New Limit</button>
+              </div>
+              <div className="card">
+                {limits.length === 0 ? (
+                  <div className="empty-state">No parameter limits defined. Click "New Limit" to add one.</div>
+                ) : (
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>ID</th>
+                        <th>Parameter</th>
+                        <th>Context Match</th>
+                        <th>Lower Limit</th>
+                        <th>Upper Limit</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {limits.map(l => (
+                        <tr key={l.id}>
+                          <td>{l.id}</td>
+                          <td>{paramMap[l.parameterId]?.name || `#${l.parameterId}`}</td>
+                          <td><code>{l.contextMatchJson}</code></td>
+                          <td>{l.lowerLimit != null ? l.lowerLimit : '-'}</td>
+                          <td>{l.upperLimit != null ? l.upperLimit : '-'}</td>
+                          <td>
+                            <button className="btn btn-danger" onClick={() => deleteLimit(l.id)}>Delete</button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </>
+          )}
+
+          {showRuleForm && <RuleForm parameters={parameters} onSave={createRule} onCancel={() => setShowRuleForm(false)} />}
+          {showLimitForm && <LimitForm parameters={parameters} onSave={createLimit} onCancel={() => setShowLimitForm(false)} />}
+          {showVersions && <VersionHistory ruleId={showVersions} onClose={() => setShowVersions(null)} />}
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
