@@ -143,8 +143,6 @@ Step 5. When all acceptance criteria pass and all tests are green:
     "Closes #$n" and a short summary of what was built and how it was tested.
   - Merge the PR using:
       gh pr merge --squash --delete-branch --repo $REPO
-    Auto-merge is enabled because subsequent slices depend on this one being
-    on main. Only merge if your tests are green.
 
 Constraints:
 - Stay on branch issue-$n. Do not modify main directly (only via merging the PR).
