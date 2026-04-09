@@ -1,11 +1,9 @@
 package com.waferalarm.alarm;
 
 import com.waferalarm.domain.*;
+import org.springframework.stereotype.Component;
 
-/**
- * Pure state machine: (event, currentAlarm) → newAlarmState.
- * Walking skeleton: only firing open + accumulate transitions.
- */
+@Component
 public class AlarmLifecycle {
 
     public AlarmSnapshot apply(AlarmEvent event, AlarmSnapshot current) {

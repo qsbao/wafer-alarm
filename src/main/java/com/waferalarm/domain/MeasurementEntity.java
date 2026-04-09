@@ -15,7 +15,7 @@ public class MeasurementEntity {
     @Column(name = "wafer_id", nullable = false)
     private String waferId;
 
-    @Column(nullable = false)
+    @Column(name = "measured_value", nullable = false)
     private double value;
 
     @Column(nullable = false)

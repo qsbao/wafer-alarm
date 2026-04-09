@@ -2,14 +2,13 @@ package com.waferalarm.evaluator;
 
 import com.waferalarm.domain.*;
 
+import org.springframework.stereotype.Component;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Pure function: (rules, measurements, limits) → AlarmEvents.
- * Walking skeleton: only UPPER_THRESHOLD implemented.
- */
+@Component
 public class RuleEvaluator {
 
     public List<AlarmEvent> evaluate(
