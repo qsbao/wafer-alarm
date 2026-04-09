@@ -1,8 +1,11 @@
 package com.waferalarm.trend;
 
+import org.springframework.stereotype.Component;
+
 import java.util.ArrayList;
 import java.util.List;
 
+@Component
 public class TrendChartDownsampler {
 
     public List<TrendPoint> downsample(List<TrendPoint> points, int bucketCount) {
