@@ -24,11 +24,15 @@ class CatalogControllerTest {
     @Autowired AlarmRepository alarmRepo;
     @Autowired MeasurementRepository measurementRepo;
     @Autowired RuleRepository ruleRepo;
+    @Autowired RuleVersionRepository ruleVersionRepo;
+    @Autowired ParameterLimitRepository parameterLimitRepo;
 
     @BeforeEach
     void setUp() {
         alarmRepo.deleteAll();
         measurementRepo.deleteAll();
+        parameterLimitRepo.deleteAll();
+        ruleVersionRepo.deleteAll();
         ruleRepo.deleteAll();
         parameterRepo.deleteAll();
     }

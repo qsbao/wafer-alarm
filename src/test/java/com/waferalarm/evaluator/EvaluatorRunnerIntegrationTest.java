@@ -19,6 +19,8 @@ class EvaluatorRunnerIntegrationTest {
     @Autowired ParameterRepository parameterRepo;
     @Autowired MeasurementRepository measurementRepo;
     @Autowired RuleRepository ruleRepo;
+    @Autowired RuleVersionRepository ruleVersionRepo;
+    @Autowired ParameterLimitRepository parameterLimitRepo;
     @Autowired AlarmRepository alarmRepo;
     @Autowired EvalWatermarkRepository watermarkRepo;
     @Autowired EvaluatorRunner runner;
@@ -27,6 +29,8 @@ class EvaluatorRunnerIntegrationTest {
     void cleanDb() {
         alarmRepo.deleteAll();
         measurementRepo.deleteAll();
+        parameterLimitRepo.deleteAll();
+        ruleVersionRepo.deleteAll();
         ruleRepo.deleteAll();
         watermarkRepo.deleteAll();
         parameterRepo.deleteAll();

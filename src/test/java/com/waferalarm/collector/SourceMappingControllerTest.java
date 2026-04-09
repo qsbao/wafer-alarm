@@ -27,6 +27,8 @@ class SourceMappingControllerTest {
     @Autowired AlarmRepository alarmRepo;
     @Autowired MeasurementRepository measurementRepo;
     @Autowired RuleRepository ruleRepo;
+    @Autowired RuleVersionRepository ruleVersionRepo;
+    @Autowired ParameterLimitRepository parameterLimitRepo;
     @Autowired CollectorWatermarkRepository watermarkRepo;
 
     Long sourceSystemId;
@@ -37,6 +39,8 @@ class SourceMappingControllerTest {
         connectorRunRepo.deleteAll();
         alarmRepo.deleteAll();
         measurementRepo.deleteAll();
+        parameterLimitRepo.deleteAll();
+        ruleVersionRepo.deleteAll();
         ruleRepo.deleteAll();
         watermarkRepo.deleteAll();
         sourceMappingRepo.deleteAll();

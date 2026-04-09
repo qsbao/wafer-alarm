@@ -24,6 +24,8 @@ class SourceConnectorTest {
     @Autowired MeasurementRepository measurementRepo;
     @Autowired AlarmRepository alarmRepo;
     @Autowired RuleRepository ruleRepo;
+    @Autowired RuleVersionRepository ruleVersionRepo;
+    @Autowired ParameterLimitRepository parameterLimitRepo;
     @Autowired ConnectorRunRepository connectorRunRepo;
     @Autowired CollectorWatermarkRepository watermarkRepo;
 
@@ -34,6 +36,8 @@ class SourceConnectorTest {
         connectorRunRepo.deleteAll();
         alarmRepo.deleteAll();
         measurementRepo.deleteAll();
+        parameterLimitRepo.deleteAll();
+        ruleVersionRepo.deleteAll();
         ruleRepo.deleteAll();
         watermarkRepo.deleteAll();
         sourceMappingRepo.deleteAll();
