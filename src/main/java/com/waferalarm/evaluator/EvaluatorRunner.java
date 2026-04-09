@@ -92,7 +92,7 @@ public class EvaluatorRunner {
                     .orElse(null);
 
             AlarmSnapshot currentSnapshot = existing != null ? existing.toSnapshot() : null;
-            AlarmSnapshot newSnapshot = alarmLifecycle.apply(event, currentSnapshot);
+            AlarmSnapshot newSnapshot = alarmLifecycle.apply(event, currentSnapshot, Instant.now());
 
             if (existing != null && newSnapshot.alarmId() != null) {
                 existing.updateFromSnapshot(newSnapshot);
