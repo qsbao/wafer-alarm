@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx playwright-cli:*)",
+      "Bash(python3 -m json.tool)",
+      "Bash(wc -l /Users/qsbao/github/qsbao/skill-web-ide/backend/src/routes/*.ts /Users/qsbao/github/qsbao/skill-web-ide/backend/src/services/*.ts)",
+      "Bash(xargs basename:*)",
+      "Bash(npx tsc:*)",
+      "Bash(wc:*)",
+      "Bash(npx vitest:*)"
+    ]
+  }
+}
