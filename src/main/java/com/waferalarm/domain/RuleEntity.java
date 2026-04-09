@@ -1,0 +1,52 @@
+package com.waferalarm.domain;
+
+import jakarta.persistence.*;
+import java.time.Instant;
+
+@Entity
+@Table(name = "rule")
+public class RuleEntity {
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(name = "parameter_id", nullable = false)
+    private Long parameterId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "rule_type", nullable = false)
+    private RuleType ruleType;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private Severity severity;
+
+    @Column(nullable = false)
+    private boolean enabled = true;
+
+    @Column(name = "created_at", nullable = false)
+    private Instant createdAt;
+
+    @Column(name = "updated_at", nullable = false)
+    private Instant updatedAt;
+
+    protected RuleEntity() {}
+
+    public RuleEntity(Long parameterId, RuleType ruleType, Severity severity) {
+        this.parameterId = parameterId;
+        this.ruleType = ruleType;
+        this.severity = severity;
+        this.enabled = true;
+        this.createdAt = Instant.now();
+        this.updatedAt = Instant.now();
+    }
+
+    public Long getId() { return id; }
+    public Long getParameterId() { return parameterId; }
+    public RuleType getRuleType() { return ruleType; }
+    public Severity getSeverity() { return severity; }
+    public boolean isEnabled() { return enabled; }
+
+    public RuleData toRuleData() {
+        return new RuleData(id, parameterId, ruleType, severity, enabled);
+    }
+}
