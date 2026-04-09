@@ -137,21 +137,25 @@ Step 4. Implement only what the issue's acceptance criteria require. Do NOT
 add features beyond the slice. Refer to the PRD for module shapes and
 architectural decisions, but do not exceed scope.
 
-Step 5. When all acceptance criteria pass:
+Step 5. When all acceptance criteria pass and all tests are green:
   - You are already on branch issue-$n. Push it to origin.
   - Open a PR titled the same as the issue, with a body containing
     "Closes #$n" and a short summary of what was built and how it was tested.
-  - DO NOT merge the PR. Leave it for human review.
+  - Merge the PR using:
+      gh pr merge --squash --delete-branch --repo $REPO
+    Auto-merge is enabled because subsequent slices depend on this one being
+    on main. Only merge if your tests are green.
 
 Constraints:
-- Stay on branch issue-$n. Do not modify main.
+- Stay on branch issue-$n. Do not modify main directly (only via merging the PR).
 - Use the tech stack from the PRD: Java/Spring Boot, MySQL, Flyway, React,
   Apache ECharts. Do not introduce alternatives.
 - If you discover this slice depends on something not yet built that the
   caller's blocker check missed, leave a comment on the issue explaining the
-  blocker and stop.
-- Do not close the issue manually; let the merged PR close it.
+  blocker and stop. Do NOT merge an incomplete PR.
 - Do not run with --no-verify, --force, or other destructive git flags.
+- Tests must pass before merging. If tests are failing, fix them; if you
+  cannot, leave a comment on the PR and stop without merging.
 EOF
 }
 
@@ -247,6 +251,25 @@ work_on_issue() {
 
   local rc=${PIPESTATUS[0]}
   log "==== Issue #$n claude run exited with code $rc ===="
+
+  # Safety net: if Claude pushed a branch + opened a PR but did not merge it,
+  # merge it here so that subsequent slices can build on this one. Skip if the
+  # branch never got pushed (Claude bailed) or the PR was already merged.
+  if remote_branch_exists "$n"; then
+    local pr_number
+    pr_number=$(gh pr list --repo "$REPO" --head "issue-$n" --state open --json number -q '.[0].number' 2>/dev/null || true)
+    if [[ -n "$pr_number" ]]; then
+      log "Auto-merging PR #$pr_number for issue #$n"
+      if gh pr merge "$pr_number" --repo "$REPO" --squash --delete-branch 2>&1 | tee -a "$logfile"; then
+        log "Merged PR #$pr_number"
+      else
+        log "PR #$pr_number merge failed — leaving open for manual review"
+      fi
+    else
+      log "No open PR found for branch issue-$n; skipping auto-merge"
+    fi
+  fi
+
   return 0
 }
 
