@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Parameter Catalog — Wafer Alarm System</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f6fa; color: #333; }
+    .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+    h1 { font-size: 1.5rem; font-weight: 600; margin-bottom: 20px; }
+    .nav-links { font-size: 0.875rem; margin-left: 16px; }
+    .nav-links a { color: #3498db; text-decoration: none; margin-right: 12px; }
+    .card { background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); padding: 20px; margin-bottom: 20px; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+    th { text-align: left; padding: 10px 12px; border-bottom: 2px solid #eee; color: #666; font-weight: 600; white-space: nowrap; }
+    td { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; }
+    tr:hover td { background: #fafbfc; }
+    .btn { padding: 6px 14px; border: 1px solid #ccc; border-radius: 4px; background: #fff; cursor: pointer; font-size: 0.8rem; margin-right: 4px; }
+    .btn:hover { background: #f0f0f0; }
+    .btn-primary { background: #3498db; color: #fff; border-color: #3498db; }
+    .btn-primary:hover { background: #2980b9; }
+    .btn-danger { border-color: #e74c3c; color: #e74c3c; }
+    .btn-danger:hover { background: #fdecea; }
+    .disabled-row td { color: #aaa; }
+    .status-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.7rem; font-weight: 600; }
+    .status-enabled { background: #e8f5e9; color: #2e7d32; }
+    .status-disabled { background: #fbe9e7; color: #c62828; }
+    .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 100; }
+    .modal { background: #fff; padding: 24px; border-radius: 8px; min-width: 420px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+    .modal h2 { font-size: 1.1rem; margin-bottom: 16px; }
+    .form-group { margin-bottom: 12px; }
+    .form-group label { display: block; font-size: 0.8rem; color: #666; margin-bottom: 4px; font-weight: 600; }
+    .form-group input, .form-group textarea { width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.875rem; }
+    .form-group textarea { resize: vertical; height: 60px; }
+    .form-row { display: flex; gap: 12px; }
+    .form-row .form-group { flex: 1; }
+    .form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+    .error-msg { color: #e74c3c; font-size: 0.8rem; margin-top: 4px; }
+    .empty-state { text-align: center; padding: 48px 20px; color: #888; font-size: 1rem; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useCallback } = React;
+
+    function ParameterForm({ initial, onSave, onCancel }) {
+      const [form, setForm] = useState(initial || {
+        name: '', unit: '', description: '', area: '',
+        defaultLowerLimit: '', defaultUpperLimit: ''
+      });
+      const [error, setError] = useState('');
+
+      const handleChange = (field) => (e) => {
+        setForm({ ...form, [field]: e.target.value });
+        setError('');
+      };
+
+      const handleSubmit = async () => {
+        if (!form.name.trim()) { setError('Name is required'); return; }
+        const payload = {
+          name: form.name.trim(),
+          unit: form.unit.trim() || null,
+          description: form.description.trim() || null,
+          area: form.area.trim() || null,
+          defaultLowerLimit: form.defaultLowerLimit !== '' ? parseFloat(form.defaultLowerLimit) : null,
+          defaultUpperLimit: form.defaultUpperLimit !== '' ? parseFloat(form.defaultUpperLimit) : null,
+        };
+        if (payload.defaultLowerLimit != null && payload.defaultUpperLimit != null
+            && payload.defaultLowerLimit >= payload.defaultUpperLimit) {
+          setError('Lower limit must be less than upper limit');
+          return;
+        }
+        try {
+          await onSave(payload);
+        } catch (e) {
+          setError(e.message || 'Save failed');
+        }
+      };
+
+      return (
+        <div className="modal-overlay" onClick={onCancel}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <h2>{initial ? 'Edit Parameter' : 'New Parameter'}</h2>
+            <div className="form-group">
+              <label>Name *</label>
+              <input value={form.name} onChange={handleChange('name')} placeholder="e.g. CD" />
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label>Unit</label>
+                <input value={form.unit} onChange={handleChange('unit')} placeholder="e.g. nm" />
+              </div>
+              <div className="form-group">
+                <label>Area</label>
+                <input value={form.area} onChange={handleChange('area')} placeholder="e.g. Litho" />
+              </div>
+            </div>
+            <div className="form-group">
+              <label>Description</label>
+              <textarea value={form.description} onChange={handleChange('description')} placeholder="Parameter description" />
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label>Default Lower Limit</label>
+                <input type="number" step="any" value={form.defaultLowerLimit} onChange={handleChange('defaultLowerLimit')} />
+              </div>
+              <div className="form-group">
+                <label>Default Upper Limit</label>
+                <input type="number" step="any" value={form.defaultUpperLimit} onChange={handleChange('defaultUpperLimit')} />
+              </div>
+            </div>
+            {error && <div className="error-msg">{error}</div>}
+            <div className="form-actions">
+              <button className="btn" onClick={onCancel}>Cancel</button>
+              <button className="btn btn-primary" onClick={handleSubmit}>{initial ? 'Save' : 'Create'}</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function ParameterTable({ parameters, onEdit, onDisable }) {
+      if (parameters.length === 0) {
+        return <div className="empty-state">No parameters in catalog. Click "New Parameter" to add one.</div>;
+      }
+      return (
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Name</th>
+              <th>Unit</th>
+              <th>Area</th>
+              <th>Description</th>
+              <th>Lower Limit</th>
+              <th>Upper Limit</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {parameters.map(p => (
+              <tr key={p.id} className={!p.enabled ? 'disabled-row' : ''}>
+                <td>{p.id}</td>
+                <td>{p.name}</td>
+                <td>{p.unit || '-'}</td>
+                <td>{p.area || '-'}</td>
+                <td>{p.description || '-'}</td>
+                <td>{p.defaultLowerLimit != null ? p.defaultLowerLimit : '-'}</td>
+                <td>{p.defaultUpperLimit != null ? p.defaultUpperLimit : '-'}</td>
+                <td>
+                  <span className={`status-badge ${p.enabled ? 'status-enabled' : 'status-disabled'}`}>
+                    {p.enabled ? 'Enabled' : 'Disabled'}
+                  </span>
+                </td>
+                <td>
+                  <button className="btn" onClick={() => onEdit(p)}>Edit</button>
+                  {p.enabled && (
+                    <button className="btn btn-danger" onClick={() => onDisable(p.id)}>Disable</button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      );
+    }
+
+    function App() {
+      const [parameters, setParameters] = useState([]);
+      const [showForm, setShowForm] = useState(false);
+      const [editParam, setEditParam] = useState(null);
+
+      const fetchParameters = useCallback(async () => {
+        try {
+          const res = await fetch('/api/parameters');
+          if (!res.ok) throw new Error(res.statusText);
+          setParameters(await res.json());
+        } catch (e) {
+          console.error('Failed to fetch parameters:', e);
+        }
+      }, []);
+
+      useEffect(() => { fetchParameters(); }, [fetchParameters]);
+
+      const handleCreate = async (payload) => {
+        const res = await fetch('/api/parameters', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(text || 'Create failed');
+        }
+        setShowForm(false);
+        fetchParameters();
+      };
+
+      const handleUpdate = async (payload) => {
+        const res = await fetch(`/api/parameters/${editParam.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(text || 'Update failed');
+        }
+        setEditParam(null);
+        fetchParameters();
+      };
+
+      const handleDisable = async (id) => {
+        if (!confirm('Disable this parameter?')) return;
+        try {
+          await fetch(`/api/parameters/${id}/disable`, { method: 'POST' });
+          fetchParameters();
+        } catch (e) {
+          console.error('Disable failed:', e);
+        }
+      };
+
+      const handleEdit = (p) => {
+        setEditParam({
+          ...p,
+          defaultLowerLimit: p.defaultLowerLimit != null ? String(p.defaultLowerLimit) : '',
+          defaultUpperLimit: p.defaultUpperLimit != null ? String(p.defaultUpperLimit) : '',
+        });
+      };
+
+      return (
+        <div className="container">
+          <h1>
+            Parameter Catalog
+            <span className="nav-links">
+              <a href="/">Alarms</a>
+              <a href="/trend.html">Trend</a>
+            </span>
+          </h1>
+          <div style={{ marginBottom: 16 }}>
+            <button className="btn btn-primary" onClick={() => setShowForm(true)}>New Parameter</button>
+          </div>
+          <div className="card">
+            <ParameterTable parameters={parameters} onEdit={handleEdit} onDisable={handleDisable} />
+          </div>
+          {showForm && (
+            <ParameterForm onSave={handleCreate} onCancel={() => setShowForm(false)} />
+          )}
+          {editParam && (
+            <ParameterForm initial={editParam} onSave={handleUpdate} onCancel={() => setEditParam(null)} />
+          )}
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
