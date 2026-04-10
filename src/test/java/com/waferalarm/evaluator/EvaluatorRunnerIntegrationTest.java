@@ -176,6 +176,47 @@ class EvaluatorRunnerIntegrationTest {
         assertThat(alarms.getFirst().getState()).isEqualTo(AlarmState.SUPPRESSED);
     }
 
+    // --- Per-context limit overrides global (AC2) ---
+
+    @Test
+    void context_specific_limit_overrides_global_default_at_evaluation_time() {
+        // Global default: upper=100 (from parameter catalog)
+        var param = parameterRepo.save(new ParameterEntity("CD", "nm", 100.0, null));
+        ruleRepo.save(new RuleEntity(param.getId(), RuleType.UPPER_THRESHOLD, Severity.WARNING));
+
+        // Context-specific limit: tool=TOOL-A, recipe=RCP-1 → upper=120
+        parameterLimitRepo.save(new ParameterLimitEntity(
+                param.getId(), "{\"tool\":\"TOOL-A\",\"recipe\":\"RCP-1\"}", 120.0, null));
+
+        // Measurement: value=110, matches the specific context
+        // Should NOT fire because 110 < 120 (specific limit), even though 110 > 100 (global)
+        measurementRepo.save(new MeasurementEntity(param.getId(), "W100", 110.0,
+                Instant.parse("2026-01-01T00:00:00Z"), "TOOL-A", "RCP-1", "PROD-X", "LOT-1"));
+        runner.tick();
+
+        assertThat(alarmRepo.findAll()).isEmpty();
+    }
+
+    @Test
+    void global_limit_still_fires_when_no_specific_limit_matches() {
+        // Global default: upper=100
+        var param = parameterRepo.save(new ParameterEntity("CD", "nm", 100.0, null));
+        ruleRepo.save(new RuleEntity(param.getId(), RuleType.UPPER_THRESHOLD, Severity.WARNING));
+
+        // Context-specific limit for TOOL-A/RCP-1 only
+        parameterLimitRepo.save(new ParameterLimitEntity(
+                param.getId(), "{\"tool\":\"TOOL-A\",\"recipe\":\"RCP-1\"}", 120.0, null));
+
+        // Measurement from TOOL-B: no specific limit → uses global 100 → fires
+        measurementRepo.save(new MeasurementEntity(param.getId(), "W101", 110.0,
+                Instant.parse("2026-01-01T00:00:00Z"), "TOOL-B", "RCP-2", "PROD-X", "LOT-1"));
+        runner.tick();
+
+        List<AlarmEntity> alarms = alarmRepo.findAll();
+        assertThat(alarms).hasSize(1);
+        assertThat(alarms.getFirst().getThresholdValue()).isEqualTo(100.0);
+    }
+
     // --- Rate-of-change integration tests ---
 
     @Test
