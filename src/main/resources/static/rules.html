@@ -55,6 +55,18 @@
     .version-item { padding: 8px 12px; border-bottom: 1px solid #f0f0f0; font-size: 0.825rem; }
     .version-item:last-child { border-bottom: none; }
     .version-meta { color: #888; font-size: 0.75rem; }
+    .backtest-presets { display: flex; gap: 8px; margin-bottom: 12px; }
+    .backtest-presets button { padding: 6px 12px; border: 1px solid #ddd; border-radius: 4px; background: #f5f6fa; cursor: pointer; font-size: 0.8rem; }
+    .backtest-presets button.active { background: #3498db; color: #fff; border-color: #3498db; }
+    .backtest-summary { display: flex; gap: 16px; margin-bottom: 16px; }
+    .backtest-stat { padding: 12px 16px; background: #f5f6fa; border-radius: 6px; text-align: center; min-width: 100px; }
+    .backtest-stat .stat-value { font-size: 1.5rem; font-weight: 700; }
+    .backtest-stat .stat-label { font-size: 0.75rem; color: #666; }
+    .backtest-violations { max-height: 300px; overflow-y: auto; }
+    .btn-backtest { border-color: #8e44ad; color: #8e44ad; }
+    .btn-backtest:hover { background: #f3e5f5; }
+    .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid #ccc; border-top-color: #3498db; border-radius: 50%; animation: spin 0.6s linear infinite; margin-right: 6px; vertical-align: middle; }
+    @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
@@ -297,6 +309,162 @@
       );
     }
 
+    function BacktestModal({ rule, paramMap, onClose }) {
+      const [preset, setPreset] = useState('7d');
+      const [customFrom, setCustomFrom] = useState('');
+      const [customTo, setCustomTo] = useState('');
+      const [loading, setLoading] = useState(false);
+      const [result, setResult] = useState(null);
+      const [error, setError] = useState('');
+
+      const presets = [
+        { key: '1d', label: '1 day' },
+        { key: '7d', label: '7 days' },
+        { key: '14d', label: '14 days' },
+        { key: '30d', label: '30 days' },
+        { key: 'custom', label: 'Custom' },
+      ];
+
+      const getTimeRange = () => {
+        const now = new Date();
+        if (preset === 'custom') {
+          if (!customFrom || !customTo) return null;
+          return { from: new Date(customFrom).toISOString(), to: new Date(customTo).toISOString() };
+        }
+        const days = parseInt(preset);
+        const from = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+        return { from: from.toISOString(), to: now.toISOString() };
+      };
+
+      const runBacktest = async () => {
+        const range = getTimeRange();
+        if (!range) { setError('Please select a valid time range'); return; }
+        setLoading(true);
+        setError('');
+        setResult(null);
+        try {
+          const payload = {
+            parameterId: rule.parameterId,
+            ruleType: rule.ruleType,
+            severity: rule.severity,
+            absoluteDelta: rule.absoluteDelta || null,
+            percentageDelta: rule.percentageDelta || null,
+            minimumBaseline: rule.minimumBaseline || null,
+            from: range.from,
+            to: range.to,
+          };
+          const res = await fetch('/api/rules/backtest', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          if (!res.ok) throw new Error('Backtest failed');
+          setResult(await res.json());
+        } catch (e) {
+          setError(e.message || 'Backtest failed');
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      const paramName = paramMap[rule.parameterId]?.name || `#${rule.parameterId}`;
+
+      return (
+        <div className="modal-overlay" onClick={onClose}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ minWidth: 600, maxWidth: 750 }}>
+            <h2>Backtest — {paramName} / {rule.ruleType.replace(/_/g, ' ')} / {rule.severity}</h2>
+
+            <div className="form-group">
+              <label>Time Window</label>
+              <div className="backtest-presets">
+                {presets.map(p => (
+                  <button key={p.key}
+                          className={preset === p.key ? 'active' : ''}
+                          onClick={() => { setPreset(p.key); setResult(null); }}>
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {preset === 'custom' && (
+              <div className="form-row">
+                <div className="form-group">
+                  <label>From</label>
+                  <input type="datetime-local" value={customFrom} onChange={e => setCustomFrom(e.target.value)} />
+                </div>
+                <div className="form-group">
+                  <label>To</label>
+                  <input type="datetime-local" value={customTo} onChange={e => setCustomTo(e.target.value)} />
+                </div>
+              </div>
+            )}
+
+            <div className="form-actions" style={{ justifyContent: 'flex-start', marginBottom: 16 }}>
+              <button className="btn btn-primary" onClick={runBacktest} disabled={loading}>
+                {loading && <span className="spinner"></span>}
+                {loading ? 'Running...' : 'Run Backtest'}
+              </button>
+            </div>
+
+            {error && <div className="error-msg">{error}</div>}
+
+            {result && (
+              <>
+                <div className="backtest-summary">
+                  <div className="backtest-stat">
+                    <div className="stat-value">{result.totalViolations}</div>
+                    <div className="stat-label">Total Violations</div>
+                  </div>
+                  {Object.entries(result.severityBreakdown).map(([sev, count]) => (
+                    <div className="backtest-stat" key={sev}>
+                      <div className={`stat-value severity-${sev}`}>{count}</div>
+                      <div className="stat-label">{sev}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {result.violations.length > 0 ? (
+                  <div className="backtest-violations">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>When</th>
+                          <th>Context</th>
+                          <th>Value</th>
+                          <th>Threshold</th>
+                          <th>Severity</th>
+                          <th>Wafer</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {result.violations.map((v, i) => (
+                          <tr key={i}>
+                            <td>{new Date(v.when).toLocaleString()}</td>
+                            <td><code>{v.contextKey}</code></td>
+                            <td>{v.value}</td>
+                            <td>{v.thresholdValue}</td>
+                            <td><span className={`severity-${v.severity}`}>{v.severity}</span></td>
+                            <td>{v.waferId}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="empty-state">No violations found in selected window.</div>
+                )}
+              </>
+            )}
+
+            <div className="form-actions">
+              <button className="btn" onClick={onClose}>Close</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     function App() {
       const [tab, setTab] = useState('rules');
       const [rules, setRules] = useState([]);
@@ -306,6 +474,7 @@
       const [showLimitForm, setShowLimitForm] = useState(false);
       const [editingLimit, setEditingLimit] = useState(null);
       const [showVersions, setShowVersions] = useState(null);
+      const [backtestRule, setBacktestRule] = useState(null);
 
       const paramMap = {};
       parameters.forEach(p => { paramMap[p.id] = p; });
@@ -427,6 +596,7 @@
                                     onClick={() => toggleRule(r)}>
                               {r.enabled ? 'Disable' : 'Enable'}
                             </button>
+                            <button className="btn btn-backtest" onClick={() => setBacktestRule(r)}>Backtest</button>
                             <button className="btn" onClick={() => setShowVersions(r.id)}>History</button>
                           </td>
                         </tr>
@@ -490,6 +660,7 @@
           {showRuleForm && <RuleForm parameters={parameters} onSave={createRule} onCancel={() => setShowRuleForm(false)} />}
           {showLimitForm && <LimitForm parameters={parameters} onSave={saveLimit} onCancel={() => { setShowLimitForm(false); setEditingLimit(null); }} editLimit={editingLimit} />}
           {showVersions && <VersionHistory ruleId={showVersions} onClose={() => setShowVersions(null)} />}
+          {backtestRule && <BacktestModal rule={backtestRule} paramMap={paramMap} onClose={() => setBacktestRule(null)} />}
         </div>
       );
     }
