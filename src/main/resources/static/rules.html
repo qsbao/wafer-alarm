@@ -64,9 +64,12 @@
 
     function RuleForm({ parameters, onSave, onCancel }) {
       const [form, setForm] = useState({
-        parameterId: '', ruleType: 'UPPER_THRESHOLD', severity: 'WARNING', author: ''
+        parameterId: '', ruleType: 'UPPER_THRESHOLD', severity: 'WARNING', author: '',
+        absoluteDelta: '', percentageDelta: '', minimumBaseline: ''
       });
       const [error, setError] = useState('');
+
+      const isRoc = form.ruleType === 'RATE_OF_CHANGE';
 
       const handleChange = (field) => (e) => {
         setForm({ ...form, [field]: e.target.value });
@@ -76,13 +79,22 @@
       const handleSubmit = async () => {
         if (!form.parameterId) { setError('Parameter is required'); return; }
         if (!form.author.trim()) { setError('Author is required'); return; }
+        if (isRoc && form.absoluteDelta === '' && form.percentageDelta === '') {
+          setError('At least one delta threshold is required'); return;
+        }
         try {
-          await onSave({
+          const payload = {
             parameterId: parseInt(form.parameterId),
             ruleType: form.ruleType,
             severity: form.severity,
             author: form.author.trim()
-          });
+          };
+          if (isRoc) {
+            payload.absoluteDelta = form.absoluteDelta !== '' ? parseFloat(form.absoluteDelta) : null;
+            payload.percentageDelta = form.percentageDelta !== '' ? parseFloat(form.percentageDelta) : null;
+            payload.minimumBaseline = form.minimumBaseline !== '' ? parseFloat(form.minimumBaseline) : null;
+          }
+          await onSave(payload);
         } catch (e) {
           setError(e.message || 'Save failed');
         }
@@ -91,7 +103,7 @@
       return (
         <div className="modal-overlay" onClick={onCancel}>
           <div className="modal" onClick={e => e.stopPropagation()}>
-            <h2>New Threshold Rule</h2>
+            <h2>{isRoc ? 'New Rate-of-Change Rule' : 'New Threshold Rule'}</h2>
             <div className="form-group">
               <label>Parameter *</label>
               <select value={form.parameterId} onChange={handleChange('parameterId')}>
@@ -103,10 +115,11 @@
             </div>
             <div className="form-row">
               <div className="form-group">
-                <label>Threshold Type *</label>
+                <label>Rule Type *</label>
                 <select value={form.ruleType} onChange={handleChange('ruleType')}>
                   <option value="UPPER_THRESHOLD">Upper Threshold</option>
                   <option value="LOWER_THRESHOLD">Lower Threshold</option>
+                  <option value="RATE_OF_CHANGE">Rate of Change</option>
                 </select>
               </div>
               <div className="form-group">
@@ -118,6 +131,27 @@
                 </select>
               </div>
             </div>
+            {isRoc && (
+              <>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Absolute Delta</label>
+                    <input type="number" step="any" value={form.absoluteDelta}
+                           onChange={handleChange('absoluteDelta')} placeholder="e.g. 5.0" />
+                  </div>
+                  <div className="form-group">
+                    <label>Percentage Delta (%)</label>
+                    <input type="number" step="any" value={form.percentageDelta}
+                           onChange={handleChange('percentageDelta')} placeholder="e.g. 10.0" />
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label>Minimum Baseline (skip % check below this value)</label>
+                  <input type="number" step="any" value={form.minimumBaseline}
+                         onChange={handleChange('minimumBaseline')} placeholder="e.g. 1.0" />
+                </div>
+              </>
+            )}
             <div className="form-group">
               <label>Author *</label>
               <input value={form.author} onChange={handleChange('author')} placeholder="Your name" />
@@ -328,6 +362,7 @@
                         <th>ID</th>
                         <th>Parameter</th>
                         <th>Type</th>
+                        <th>Details</th>
                         <th>Severity</th>
                         <th>Status</th>
                         <th>Version</th>
@@ -339,7 +374,16 @@
                         <tr key={r.id} className={!r.enabled ? 'disabled-row' : ''}>
                           <td>{r.id}</td>
                           <td>{paramMap[r.parameterId]?.name || `#${r.parameterId}`}</td>
-                          <td>{r.ruleType.replace('_', ' ')}</td>
+                          <td>{r.ruleType.replace(/_/g, ' ')}</td>
+                          <td style={{fontSize:'0.8rem', color:'#666'}}>
+                            {r.ruleType === 'RATE_OF_CHANGE' ? (
+                              <>
+                                {r.absoluteDelta != null && <span>|Δ|&gt;{r.absoluteDelta} </span>}
+                                {r.percentageDelta != null && <span>Δ%&gt;{r.percentageDelta}% </span>}
+                                {r.minimumBaseline != null && <span>(floor:{r.minimumBaseline})</span>}
+                              </>
+                            ) : '-'}
+                          </td>
                           <td><span className={`severity-${r.severity}`}>{r.severity}</span></td>
                           <td>
                             <span className={`status-badge ${r.enabled ? 'status-enabled' : 'status-disabled'}`}>
