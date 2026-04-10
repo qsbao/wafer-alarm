@@ -1,6 +1,7 @@
 package com.waferalarm.health;
 
 import com.waferalarm.domain.*;
+import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -27,6 +28,7 @@ public class HeartbeatInjector {
         this.ruleRepo = ruleRepo;
     }
 
+    @PostConstruct
     public void ensureSyntheticSetup() {
         ParameterEntity param = parameterRepo.findByName(HEARTBEAT_PARAMETER_NAME)
                 .orElseGet(() -> {
