@@ -23,11 +23,13 @@ class EvaluatorRunnerIntegrationTest {
     @Autowired ParameterLimitRepository parameterLimitRepo;
     @Autowired AlarmRepository alarmRepo;
     @Autowired EvalWatermarkRepository watermarkRepo;
+    @Autowired RuleStateRepository ruleStateRepo;
     @Autowired EvaluatorRunner runner;
 
     @BeforeEach
     void cleanDb() {
         alarmRepo.deleteAll();
+        ruleStateRepo.deleteAll();
         measurementRepo.deleteAll();
         parameterLimitRepo.deleteAll();
         ruleVersionRepo.deleteAll();
@@ -172,5 +174,72 @@ class EvaluatorRunnerIntegrationTest {
         List<AlarmEntity> alarms = alarmRepo.findAll();
         assertThat(alarms).hasSize(1);
         assertThat(alarms.getFirst().getState()).isEqualTo(AlarmState.SUPPRESSED);
+    }
+
+    // --- Rate-of-change integration tests ---
+
+    @Test
+    void roc_first_measurement_does_not_fire() {
+        var param = parameterRepo.save(new ParameterEntity("CD", "nm", null, null));
+        var rule = new RuleEntity(param.getId(), RuleType.RATE_OF_CHANGE, Severity.WARNING);
+        rule.setAbsoluteDelta(5.0);
+        ruleRepo.save(rule);
+
+        measurementRepo.save(new MeasurementEntity(param.getId(), "W001", 50.0,
+                Instant.parse("2026-01-01T00:00:00Z"), "TOOL-A", "RCP-1", "PROD-X", "LOT-1"));
+        runner.tick();
+
+        assertThat(alarmRepo.findAll()).isEmpty();
+        // But state should be persisted
+        assertThat(ruleStateRepo.findAll()).hasSize(1);
+        assertThat(ruleStateRepo.findAll().getFirst().getLastValue()).isEqualTo(50.0);
+    }
+
+    @Test
+    void roc_fires_when_delta_exceeds_threshold_across_ticks() {
+        var param = parameterRepo.save(new ParameterEntity("CD", "nm", null, null));
+        var rule = new RuleEntity(param.getId(), RuleType.RATE_OF_CHANGE, Severity.WARNING);
+        rule.setAbsoluteDelta(5.0);
+        ruleRepo.save(rule);
+
+        // First tick: baseline
+        measurementRepo.save(new MeasurementEntity(param.getId(), "W001", 50.0,
+                Instant.parse("2026-01-01T00:00:00Z"), "TOOL-A", "RCP-1", "PROD-X", "LOT-1"));
+        runner.tick();
+        assertThat(alarmRepo.findAll()).isEmpty();
+
+        // Second tick: delta = 10 > 5 threshold
+        measurementRepo.save(new MeasurementEntity(param.getId(), "W002", 60.0,
+                Instant.parse("2026-01-01T01:00:00Z"), "TOOL-A", "RCP-1", "PROD-X", "LOT-1"));
+        runner.tick();
+
+        List<AlarmEntity> alarms = alarmRepo.findAll();
+        assertThat(alarms).hasSize(1);
+        assertThat(alarms.getFirst().getState()).isEqualTo(AlarmState.FIRING);
+        assertThat(alarms.getFirst().getLastValue()).isEqualTo(60.0);
+    }
+
+    @Test
+    void roc_state_persists_across_ticks_no_false_fire_after_restart() {
+        var param = parameterRepo.save(new ParameterEntity("CD", "nm", null, null));
+        var rule = new RuleEntity(param.getId(), RuleType.RATE_OF_CHANGE, Severity.WARNING);
+        rule.setAbsoluteDelta(5.0);
+        ruleRepo.save(rule);
+
+        // First tick: baseline
+        measurementRepo.save(new MeasurementEntity(param.getId(), "W001", 50.0,
+                Instant.parse("2026-01-01T00:00:00Z"), "TOOL-A", "RCP-1", "PROD-X", "LOT-1"));
+        runner.tick();
+
+        // Second tick: within threshold (delta=3)
+        measurementRepo.save(new MeasurementEntity(param.getId(), "W002", 53.0,
+                Instant.parse("2026-01-01T01:00:00Z"), "TOOL-A", "RCP-1", "PROD-X", "LOT-1"));
+        runner.tick();
+
+        assertThat(alarmRepo.findAll()).isEmpty();
+        // State should show the latest value
+        RuleStateEntity state = ruleStateRepo.findAll().getFirst();
+        assertThat(state.getLastValue()).isEqualTo(53.0);
+        assertThat(state.getLastWaferId()).isEqualTo("W002");
     }
 }
