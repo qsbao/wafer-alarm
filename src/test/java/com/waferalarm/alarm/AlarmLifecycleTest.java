@@ -22,25 +22,25 @@ class AlarmLifecycleTest {
 
     private static AlarmEvent violation(Instant time) {
         return new AlarmEvent(1L, 10L, "tool=A", Severity.WARNING,
-                105.0, 100.0, time, "W001");
+                105.0, 100.0, time, "W001", null);
     }
 
     private static AlarmSnapshot alarm(AlarmState state, int occurrences) {
         return new AlarmSnapshot(42L, 1L, 10L, "tool=A",
                 state, Severity.WARNING, occurrences, T0, T1,
-                105.0, 100.0, 0, null);
+                105.0, 100.0, 0, null, null);
     }
 
     private static AlarmSnapshot alarmWithCleanCount(AlarmState state, int cleanCount) {
         return new AlarmSnapshot(42L, 1L, 10L, "tool=A",
                 state, Severity.WARNING, 3, T0, T1,
-                105.0, 100.0, cleanCount, null);
+                105.0, 100.0, cleanCount, null, null);
     }
 
     private static AlarmSnapshot suppressedAlarm(Instant until) {
         return new AlarmSnapshot(42L, 1L, 10L, "tool=A",
                 AlarmState.SUPPRESSED, Severity.WARNING, 3, T0, T1,
-                105.0, 100.0, 0, until);
+                105.0, 100.0, 0, until, null);
     }
 
     // ── Violation event (apply) ──────────────────────────────────────────

@@ -26,6 +26,8 @@ class CollectorRunnerIntegrationTest {
     @Autowired CollectorWatermarkRepository watermarkRepo;
     @Autowired AlarmRepository alarmRepo;
     @Autowired RuleRepository ruleRepo;
+    @Autowired RuleVersionRepository ruleVersionRepo;
+    @Autowired ParameterLimitRepository parameterLimitRepo;
     @Autowired CollectorRunner collectorRunner;
 
     @BeforeEach
@@ -33,6 +35,8 @@ class CollectorRunnerIntegrationTest {
         connectorRunRepo.deleteAll();
         alarmRepo.deleteAll();
         measurementRepo.deleteAll();
+        parameterLimitRepo.deleteAll();
+        ruleVersionRepo.deleteAll();
         ruleRepo.deleteAll();
         watermarkRepo.deleteAll();
         sourceMappingRepo.deleteAll();

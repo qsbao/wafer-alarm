@@ -19,6 +19,8 @@ class EvaluatorRunnerIntegrationTest {
     @Autowired ParameterRepository parameterRepo;
     @Autowired MeasurementRepository measurementRepo;
     @Autowired RuleRepository ruleRepo;
+    @Autowired RuleVersionRepository ruleVersionRepo;
+    @Autowired ParameterLimitRepository parameterLimitRepo;
     @Autowired AlarmRepository alarmRepo;
     @Autowired EvalWatermarkRepository watermarkRepo;
     @Autowired EvaluatorRunner runner;
@@ -27,6 +29,8 @@ class EvaluatorRunnerIntegrationTest {
     void cleanDb() {
         alarmRepo.deleteAll();
         measurementRepo.deleteAll();
+        parameterLimitRepo.deleteAll();
+        ruleVersionRepo.deleteAll();
         ruleRepo.deleteAll();
         watermarkRepo.deleteAll();
         parameterRepo.deleteAll();
@@ -156,7 +160,7 @@ class EvaluatorRunnerIntegrationTest {
                 alarm.getOccurrenceCount(), alarm.getFirstViolationAt(),
                 alarm.getLastViolationAt(), alarm.getLastValue(),
                 alarm.getThresholdValue(), 0,
-                Instant.parse("2099-01-01T00:00:00Z"));
+                Instant.parse("2099-01-01T00:00:00Z"), null);
         alarm.updateFromSnapshot(suppressed);
         alarmRepo.save(alarm);
 

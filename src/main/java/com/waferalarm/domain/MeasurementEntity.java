@@ -2,6 +2,8 @@ package com.waferalarm.domain;
 
 import jakarta.persistence.*;
 import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 @Entity
 @Table(name = "measurement")
@@ -62,5 +64,14 @@ public class MeasurementEntity {
 
     public String deriveContextKey() {
         return "tool=" + (tool != null ? tool : "");
+    }
+
+    public Map<String, String> deriveContextMap() {
+        Map<String, String> ctx = new LinkedHashMap<>();
+        if (tool != null) ctx.put("tool", tool);
+        if (recipe != null) ctx.put("recipe", recipe);
+        if (product != null) ctx.put("product", product);
+        if (lotId != null) ctx.put("lot_id", lotId);
+        return ctx;
     }
 }

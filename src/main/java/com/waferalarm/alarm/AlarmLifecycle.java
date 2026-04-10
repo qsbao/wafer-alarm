@@ -33,7 +33,8 @@ public class AlarmLifecycle {
                 current.contextKey(), newState, current.severity(),
                 current.occurrenceCount(), current.firstViolationAt(),
                 current.lastViolationAt(), current.lastValue(),
-                current.thresholdValue(), newCleanCount, current.suppressedUntil());
+                current.thresholdValue(), newCleanCount, current.suppressedUntil(),
+                current.ruleVersionId());
     }
 
     public AlarmSnapshot acknowledge(AlarmSnapshot current) {
@@ -61,7 +62,8 @@ public class AlarmLifecycle {
                 current.contextKey(), AlarmState.SUPPRESSED, current.severity(),
                 current.occurrenceCount(), current.firstViolationAt(),
                 current.lastViolationAt(), current.lastValue(),
-                current.thresholdValue(), current.consecutiveCleanCount(), until);
+                current.thresholdValue(), current.consecutiveCleanCount(), until,
+                current.ruleVersionId());
     }
 
     private AlarmSnapshot newFiringAlarm(AlarmEvent event) {
@@ -78,7 +80,8 @@ public class AlarmLifecycle {
                 event.violatingValue(),
                 event.thresholdValue(),
                 0,
-                null
+                null,
+                event.ruleVersionId()
         );
     }
 }
