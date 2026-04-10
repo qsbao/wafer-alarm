@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Audit Log — Wafer Alarm System</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f6fa; color: #333; }
+    .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+    h1 { font-size: 1.5rem; font-weight: 600; margin-bottom: 20px; }
+    .nav-links { font-size: 0.875rem; margin-left: 16px; }
+    .nav-links a { color: #3498db; text-decoration: none; margin-right: 12px; }
+    .card { background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); padding: 20px; margin-bottom: 20px; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+    th { text-align: left; padding: 10px 12px; border-bottom: 2px solid #eee; color: #666; font-weight: 600; white-space: nowrap; }
+    td { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; }
+    tr:hover td { background: #fafbfc; }
+    .filter-bar { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 16px; }
+    .filter-group { display: flex; flex-direction: column; }
+    .filter-group label { font-size: 0.75rem; color: #666; font-weight: 600; margin-bottom: 4px; }
+    .filter-group select, .filter-group input { padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.8rem; }
+    .btn { padding: 6px 14px; border: 1px solid #ccc; border-radius: 4px; background: #fff; cursor: pointer; font-size: 0.8rem; }
+    .btn:hover { background: #f0f0f0; }
+    .btn-primary { background: #3498db; color: #fff; border-color: #3498db; }
+    .btn-primary:hover { background: #2980b9; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.7rem; font-weight: 600; }
+    .badge-create { background: #e8f5e9; color: #2e7d32; }
+    .badge-update { background: #e3f2fd; color: #1565c0; }
+    .badge-delete { background: #fbe9e7; color: #c62828; }
+    .badge-disable { background: #fff3e0; color: #e65100; }
+    .badge-enable { background: #e8f5e9; color: #2e7d32; }
+    .badge-default { background: #f5f5f5; color: #616161; }
+    .json-cell { max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: monospace; font-size: 0.75rem; cursor: pointer; }
+    .json-cell:hover { white-space: normal; word-break: break-all; }
+    .empty-state { text-align: center; padding: 48px 20px; color: #888; font-size: 1rem; }
+    .count-label { font-size: 0.8rem; color: #888; margin-left: 8px; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useCallback } = React;
+
+    const ENTITY_TYPES = ['', 'PARAMETER', 'PARAMETER_LIMIT', 'RULE', 'ALARM', 'SOURCE_SYSTEM', 'SOURCE_MAPPING'];
+    const ACTIONS = ['', 'CREATE', 'UPDATE', 'DELETE', 'DISABLE', 'ENABLE', 'ACKNOWLEDGE', 'RESOLVE', 'SUPPRESS'];
+
+    function actionBadgeClass(action) {
+      const map = { CREATE: 'badge-create', UPDATE: 'badge-update', DELETE: 'badge-delete', DISABLE: 'badge-disable', ENABLE: 'badge-enable' };
+      return map[action] || 'badge-default';
+    }
+
+    function App() {
+      const [rows, setRows] = useState([]);
+      const [filters, setFilters] = useState({ entityType: '', entityId: '', action: '', from: '', to: '' });
+      const [loading, setLoading] = useState(false);
+
+      const fetchData = useCallback(() => {
+        setLoading(true);
+        const params = new URLSearchParams();
+        if (filters.entityType) params.set('entityType', filters.entityType);
+        if (filters.entityId) params.set('entityId', filters.entityId);
+        if (filters.action) params.set('action', filters.action);
+        if (filters.from) params.set('from', new Date(filters.from).toISOString());
+        if (filters.to) params.set('to', new Date(filters.to).toISOString());
+
+        fetch('/api/audit-log?' + params.toString())
+          .then(r => r.json())
+          .then(data => { setRows(data); setLoading(false); })
+          .catch(() => setLoading(false));
+      }, [filters]);
+
+      useEffect(() => { fetchData(); }, []);
+
+      const handleFilter = (field) => (e) => {
+        setFilters({ ...filters, [field]: e.target.value });
+      };
+
+      const applyFilters = () => fetchData();
+
+      const clearFilters = () => {
+        setFilters({ entityType: '', entityId: '', action: '', from: '', to: '' });
+        setTimeout(() => fetchData(), 0);
+      };
+
+      return (
+        <div className="container">
+          <h1>
+            Audit Log
+            <span className="nav-links">
+              <a href="/">Alarms</a>
+              <a href="/parameters.html">Parameters</a>
+              <a href="/rules.html">Rules</a>
+              <a href="/trend.html">Trend</a>
+              <a href="/source-systems.html">Source Systems</a>
+              <a href="/source-mappings.html">Mappings</a>
+              <a href="/health.html">Health</a>
+            </span>
+          </h1>
+
+          <div className="card">
+            <div className="filter-bar">
+              <div className="filter-group">
+                <label>Entity Type</label>
+                <select value={filters.entityType} onChange={handleFilter('entityType')}>
+                  {ENTITY_TYPES.map(t => <option key={t} value={t}>{t || 'All'}</option>)}
+                </select>
+              </div>
+              <div className="filter-group">
+                <label>Entity ID</label>
+                <input type="number" value={filters.entityId} onChange={handleFilter('entityId')} placeholder="Any" style={{width: 100}} />
+              </div>
+              <div className="filter-group">
+                <label>Action</label>
+                <select value={filters.action} onChange={handleFilter('action')}>
+                  {ACTIONS.map(a => <option key={a} value={a}>{a || 'All'}</option>)}
+                </select>
+              </div>
+              <div className="filter-group">
+                <label>From</label>
+                <input type="datetime-local" value={filters.from} onChange={handleFilter('from')} />
+              </div>
+              <div className="filter-group">
+                <label>To</label>
+                <input type="datetime-local" value={filters.to} onChange={handleFilter('to')} />
+              </div>
+              <button className="btn btn-primary" onClick={applyFilters}>Filter</button>
+              <button className="btn" onClick={clearFilters}>Clear</button>
+            </div>
+          </div>
+
+          <div className="card">
+            <span className="count-label">{rows.length} entries</span>
+            {rows.length === 0 ? (
+              <div className="empty-state">{loading ? 'Loading...' : 'No audit log entries found.'}</div>
+            ) : (
+              <table>
+                <thead>
+                  <tr>
+                    <th>Time</th>
+                    <th>Entity Type</th>
+                    <th>Entity ID</th>
+                    <th>Action</th>
+                    <th>Actor</th>
+                    <th>Source IP</th>
+                    <th>Before</th>
+                    <th>After</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map(row => (
+                    <tr key={row.id}>
+                      <td style={{whiteSpace: 'nowrap'}}>{new Date(row.createdAt).toLocaleString()}</td>
+                      <td>{row.entityType}</td>
+                      <td>{row.entityId}</td>
+                      <td><span className={'badge ' + actionBadgeClass(row.action)}>{row.action}</span></td>
+                      <td>{row.actor}</td>
+                      <td>{row.sourceIp || '-'}</td>
+                      <td className="json-cell" title={row.beforeJson || ''}>{row.beforeJson || '-'}</td>
+                      <td className="json-cell" title={row.afterJson || ''}>{row.afterJson || '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
