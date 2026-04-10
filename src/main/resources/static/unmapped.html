@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Unmapped Data Inbox — Wafer Alarm System</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f6fa; color: #333; }
+    .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+    h1 { font-size: 1.5rem; font-weight: 600; margin-bottom: 20px; }
+    .nav-links { font-size: 0.875rem; margin-left: 16px; }
+    .nav-links a { color: #3498db; text-decoration: none; margin-right: 12px; }
+    .card { background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); padding: 20px; margin-bottom: 20px; }
+    .source-header { font-size: 1.1rem; font-weight: 600; margin-bottom: 12px; color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 8px; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.825rem; }
+    th { text-align: left; padding: 10px 12px; border-bottom: 2px solid #eee; color: #666; font-weight: 600; white-space: nowrap; }
+    td { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    tr:hover td { background: #fafbfc; }
+    .btn { padding: 6px 14px; border: 1px solid #ccc; border-radius: 4px; background: #fff; cursor: pointer; font-size: 0.8rem; margin-right: 4px; }
+    .btn:hover { background: #f0f0f0; }
+    .btn-primary { background: #3498db; color: #fff; border-color: #3498db; }
+    .btn-primary:hover { background: #2980b9; }
+    .btn-danger { border-color: #e74c3c; color: #e74c3c; }
+    .btn-danger:hover { background: #fdecea; }
+    .empty-state { text-align: center; padding: 48px 20px; color: #888; font-size: 1rem; }
+    .count-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.7rem; font-weight: 600; background: #fff3e0; color: #e65100; }
+    .timestamp { font-size: 0.75rem; color: #888; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useCallback } = React;
+
+    function App() {
+      const [grouped, setGrouped] = useState({});
+      const [loading, setLoading] = useState(true);
+      const [error, setError] = useState('');
+
+      const loadData = useCallback(async () => {
+        try {
+          const res = await fetch('/api/unmapped');
+          if (!res.ok) throw new Error('Failed to load unmapped data');
+          setGrouped(await res.json());
+          setError('');
+        } catch (e) {
+          setError(e.message);
+        } finally {
+          setLoading(false);
+        }
+      }, []);
+
+      useEffect(() => { loadData(); }, [loadData]);
+
+      const handleDismiss = async (sourceSystemId, columnKey) => {
+        if (!confirm(`Dismiss "${columnKey}"? It will be ignored in future collections.`)) return;
+        try {
+          await fetch('/api/unmapped/dismiss', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sourceSystemId, columnKey })
+          });
+          loadData();
+        } catch (e) {
+          alert('Failed to dismiss: ' + e.message);
+        }
+      };
+
+      const handleCreateMapping = (sourceSystemId, columnKey) => {
+        window.location.href = `/source-mappings.html?prefill=true&sourceSystemId=${sourceSystemId}&columnKey=${encodeURIComponent(columnKey)}`;
+      };
+
+      const formatTime = (ts) => {
+        if (!ts) return '—';
+        return new Date(ts).toLocaleString();
+      };
+
+      const sourceNames = Object.keys(grouped);
+      const totalCount = sourceNames.reduce((sum, name) => sum + grouped[name].length, 0);
+
+      return React.createElement('div', { className: 'container' },
+        React.createElement('h1', null,
+          'Unmapped Data Inbox',
+          totalCount > 0 && React.createElement('span', { className: 'count-badge', style: { marginLeft: 12, fontSize: '0.9rem' } }, totalCount),
+          React.createElement('span', { className: 'nav-links' },
+            React.createElement('a', { href: '/' }, 'Alarms'),
+            React.createElement('a', { href: '/parameters.html' }, 'Parameters'),
+            React.createElement('a', { href: '/source-systems.html' }, 'Source Systems'),
+            React.createElement('a', { href: '/source-mappings.html' }, 'Mappings'),
+            React.createElement('a', { href: '/rules.html' }, 'Rules'),
+            React.createElement('a', { href: '/health.html' }, 'Health')
+          )
+        ),
+        error && React.createElement('div', { style: { color: '#e74c3c', marginBottom: 12 } }, error),
+        loading
+          ? React.createElement('div', { className: 'empty-state' }, 'Loading...')
+          : sourceNames.length === 0
+            ? React.createElement('div', { className: 'card' },
+                React.createElement('div', { className: 'empty-state' }, 'No unmapped data. All source columns are mapped or dismissed.')
+              )
+            : sourceNames.map(sourceName =>
+                React.createElement('div', { key: sourceName, className: 'card' },
+                  React.createElement('div', { className: 'source-header' },
+                    sourceName,
+                    React.createElement('span', { className: 'count-badge', style: { marginLeft: 8 } }, grouped[sourceName].length + ' unmapped')
+                  ),
+                  React.createElement('table', null,
+                    React.createElement('thead', null,
+                      React.createElement('tr', null,
+                        React.createElement('th', null, 'Column / Key'),
+                        React.createElement('th', null, 'Sample Value'),
+                        React.createElement('th', null, 'Count'),
+                        React.createElement('th', null, 'First Seen'),
+                        React.createElement('th', null, 'Last Seen'),
+                        React.createElement('th', null, 'Actions')
+                      )
+                    ),
+                    React.createElement('tbody', null,
+                      grouped[sourceName].map(entry =>
+                        React.createElement('tr', { key: entry.id },
+                          React.createElement('td', null, React.createElement('strong', null, entry.columnKey)),
+                          React.createElement('td', { title: entry.sampleValue }, entry.sampleValue || '—'),
+                          React.createElement('td', null, React.createElement('span', { className: 'count-badge' }, entry.occurrenceCount)),
+                          React.createElement('td', { className: 'timestamp' }, formatTime(entry.firstSeen)),
+                          React.createElement('td', { className: 'timestamp' }, formatTime(entry.lastSeen)),
+                          React.createElement('td', null,
+                            React.createElement('button', {
+                              className: 'btn btn-primary',
+                              onClick: () => handleCreateMapping(entry.sourceSystemId, entry.columnKey)
+                            }, 'Create Mapping'),
+                            React.createElement('button', {
+                              className: 'btn btn-danger',
+                              onClick: () => handleDismiss(entry.sourceSystemId, entry.columnKey)
+                            }, 'Dismiss')
+                          )
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
+  </script>
+</body>
+</html>
