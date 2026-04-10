@@ -24,13 +24,21 @@ class ParameterLimitControllerTest {
     @Autowired ParameterRepository parameterRepo;
     @Autowired ParameterLimitRepository limitRepo;
     @Autowired LimitAuditLogRepository auditRepo;
+    @Autowired AlarmRepository alarmRepo;
+    @Autowired MeasurementRepository measurementRepo;
+    @Autowired RuleVersionRepository ruleVersionRepo;
+    @Autowired RuleRepository ruleRepo;
 
     private Long paramId;
 
     @BeforeEach
     void setUp() {
+        alarmRepo.deleteAll();
+        measurementRepo.deleteAll();
         auditRepo.deleteAll();
         limitRepo.deleteAll();
+        ruleVersionRepo.deleteAll();
+        ruleRepo.deleteAll();
         parameterRepo.deleteAll();
         var param = parameterRepo.save(new ParameterEntity("CD", "nm", 100.0, null));
         paramId = param.getId();

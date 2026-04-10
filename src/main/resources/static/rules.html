@@ -202,9 +202,19 @@
       );
     }
 
-    function LimitForm({ parameters, onSave, onCancel }) {
+    function LimitForm({ parameters, onSave, onCancel, editLimit }) {
+      const parseContext = (json) => {
+        try {
+          const obj = JSON.parse(json || '{}');
+          return { tool: obj.tool || '', recipe: obj.recipe || '', product: obj.product || '' };
+        } catch { return { tool: '', recipe: '', product: '' }; }
+      };
+      const initCtx = editLimit ? parseContext(editLimit.contextMatchJson) : { tool: '', recipe: '', product: '' };
       const [form, setForm] = useState({
-        parameterId: '', contextMatchJson: '{}', upperLimit: '', lowerLimit: ''
+        parameterId: editLimit ? String(editLimit.parameterId) : '',
+        tool: initCtx.tool, recipe: initCtx.recipe, product: initCtx.product,
+        upperLimit: editLimit?.upperLimit != null ? String(editLimit.upperLimit) : '',
+        lowerLimit: editLimit?.lowerLimit != null ? String(editLimit.lowerLimit) : '',
       });
       const [error, setError] = useState('');
 
@@ -213,20 +223,28 @@
         setError('');
       };
 
+      const buildContextJson = () => {
+        const ctx = {};
+        if (form.tool.trim()) ctx.tool = form.tool.trim();
+        if (form.recipe.trim()) ctx.recipe = form.recipe.trim();
+        if (form.product.trim()) ctx.product = form.product.trim();
+        return JSON.stringify(ctx);
+      };
+
       const handleSubmit = async () => {
         if (!form.parameterId) { setError('Parameter is required'); return; }
-        try {
-          JSON.parse(form.contextMatchJson);
-        } catch {
-          setError('Context match must be valid JSON'); return;
+        const lower = form.lowerLimit !== '' ? parseFloat(form.lowerLimit) : null;
+        const upper = form.upperLimit !== '' ? parseFloat(form.upperLimit) : null;
+        if (lower != null && upper != null && lower >= upper) {
+          setError('Lower limit must be less than upper limit'); return;
         }
         try {
           await onSave({
             parameterId: parseInt(form.parameterId),
-            contextMatchJson: form.contextMatchJson,
-            upperLimit: form.upperLimit !== '' ? parseFloat(form.upperLimit) : null,
-            lowerLimit: form.lowerLimit !== '' ? parseFloat(form.lowerLimit) : null,
-          });
+            contextMatchJson: buildContextJson(),
+            upperLimit: upper,
+            lowerLimit: lower,
+          }, editLimit?.id);
         } catch (e) {
           setError(e.message || 'Save failed');
         }
@@ -235,20 +253,29 @@
       return (
         <div className="modal-overlay" onClick={onCancel}>
           <div className="modal" onClick={e => e.stopPropagation()}>
-            <h2>New Parameter Limit</h2>
+            <h2>{editLimit ? 'Edit Parameter Limit' : 'New Parameter Limit'}</h2>
             <div className="form-group">
               <label>Parameter *</label>
-              <select value={form.parameterId} onChange={handleChange('parameterId')}>
+              <select value={form.parameterId} onChange={handleChange('parameterId')} disabled={!!editLimit}>
                 <option value="">-- Select parameter --</option>
                 {parameters.map(p => (
                   <option key={p.id} value={p.id}>{p.name}{p.unit ? ` (${p.unit})` : ''}</option>
                 ))}
               </select>
             </div>
-            <div className="form-group">
-              <label>Context Match (JSON)</label>
-              <input value={form.contextMatchJson} onChange={handleChange('contextMatchJson')}
-                     placeholder='e.g. {"tool":"TOOL-A"} or {} for global' />
+            <div className="form-row">
+              <div className="form-group">
+                <label>Tool</label>
+                <input value={form.tool} onChange={handleChange('tool')} placeholder="e.g. TOOL-A (blank = any)" />
+              </div>
+              <div className="form-group">
+                <label>Recipe</label>
+                <input value={form.recipe} onChange={handleChange('recipe')} placeholder="e.g. RCP-1 (blank = any)" />
+              </div>
+              <div className="form-group">
+                <label>Product</label>
+                <input value={form.product} onChange={handleChange('product')} placeholder="e.g. PROD-X (blank = any)" />
+              </div>
             </div>
             <div className="form-row">
               <div className="form-group">
@@ -263,7 +290,7 @@
             {error && <div className="error-msg">{error}</div>}
             <div className="form-actions">
               <button className="btn" onClick={onCancel}>Cancel</button>
-              <button className="btn btn-primary" onClick={handleSubmit}>Create Limit</button>
+              <button className="btn btn-primary" onClick={handleSubmit}>{editLimit ? 'Save Changes' : 'Create Limit'}</button>
             </div>
           </div>
         </div>
@@ -277,6 +304,7 @@
       const [parameters, setParameters] = useState([]);
       const [showRuleForm, setShowRuleForm] = useState(false);
       const [showLimitForm, setShowLimitForm] = useState(false);
+      const [editingLimit, setEditingLimit] = useState(null);
       const [showVersions, setShowVersions] = useState(null);
 
       const paramMap = {};
@@ -313,13 +341,16 @@
         fetchAll();
       };
 
-      const createLimit = async (payload) => {
-        const res = await fetch('/api/parameter-limits', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
+      const saveLimit = async (payload, editId) => {
+        const url = editId ? `/api/parameter-limits/${editId}` : '/api/parameter-limits';
+        const method = editId ? 'PUT' : 'POST';
+        const res = await fetch(url, {
+          method, headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         });
-        if (!res.ok) throw new Error('Create failed');
+        if (!res.ok) throw new Error('Save failed');
         setShowLimitForm(false);
+        setEditingLimit(null);
         fetchAll();
       };
 
@@ -410,7 +441,7 @@
           {tab === 'limits' && (
             <>
               <div style={{ marginBottom: 16 }}>
-                <button className="btn btn-primary" onClick={() => setShowLimitForm(true)}>New Limit</button>
+                <button className="btn btn-primary" onClick={() => { setEditingLimit(null); setShowLimitForm(true); }}>New Limit</button>
               </div>
               <div className="card">
                 {limits.length === 0 ? (
@@ -424,18 +455,27 @@
                         <th>Context Match</th>
                         <th>Lower Limit</th>
                         <th>Upper Limit</th>
+                        <th>Status</th>
                         <th>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
                       {limits.map(l => (
-                        <tr key={l.id}>
+                        <tr key={l.id} style={l.ambiguous ? {background:'#fff3f0'} : {}}>
                           <td>{l.id}</td>
                           <td>{paramMap[l.parameterId]?.name || `#${l.parameterId}`}</td>
-                          <td><code>{l.contextMatchJson}</code></td>
+                          <td><code>{l.contextMatchJson === '{}' ? '(global)' : l.contextMatchJson}</code></td>
                           <td>{l.lowerLimit != null ? l.lowerLimit : '-'}</td>
                           <td>{l.upperLimit != null ? l.upperLimit : '-'}</td>
                           <td>
+                            {l.ambiguous && (
+                              <span style={{color:'#c62828',fontWeight:600,fontSize:'0.8rem'}} title="Multiple limits with the same context — highest ID wins as tie-breaker">
+                                ⚠ Ambiguous
+                              </span>
+                            )}
+                          </td>
+                          <td>
+                            <button className="btn" onClick={() => { setEditingLimit(l); setShowLimitForm(true); }}>Edit</button>
                             <button className="btn btn-danger" onClick={() => deleteLimit(l.id)}>Delete</button>
                           </td>
                         </tr>
@@ -448,7 +488,7 @@
           )}
 
           {showRuleForm && <RuleForm parameters={parameters} onSave={createRule} onCancel={() => setShowRuleForm(false)} />}
-          {showLimitForm && <LimitForm parameters={parameters} onSave={createLimit} onCancel={() => setShowLimitForm(false)} />}
+          {showLimitForm && <LimitForm parameters={parameters} onSave={saveLimit} onCancel={() => { setShowLimitForm(false); setEditingLimit(null); }} editLimit={editingLimit} />}
           {showVersions && <VersionHistory ruleId={showVersions} onClose={() => setShowVersions(null)} />}
         </div>
       );
