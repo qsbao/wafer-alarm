@@ -14,9 +14,11 @@ public class SourceMappingService {
     private static final int DEFAULT_QUERY_TIMEOUT = 30;
 
     private final SourceMappingRepository repo;
+    private final BackfillRunner backfillRunner;
 
-    public SourceMappingService(SourceMappingRepository repo) {
+    public SourceMappingService(SourceMappingRepository repo, BackfillRunner backfillRunner) {
         this.repo = repo;
+        this.backfillRunner = backfillRunner;
     }
 
     public List<SourceMappingEntity> listAll() {
@@ -25,13 +27,26 @@ public class SourceMappingService {
 
     public SourceMappingEntity create(SourceMappingRequest req) {
         validate(req);
-        return repo.save(new SourceMappingEntity(
+        var entity = new SourceMappingEntity(
                 req.sourceSystemId(), req.parameterId(),
                 req.queryTemplate(), req.valueColumn(), req.watermarkColumn(),
                 req.contextColumnMapping(),
                 req.pollIntervalSeconds() != null ? req.pollIntervalSeconds() : DEFAULT_POLL_INTERVAL,
                 req.rowCap() != null ? req.rowCap() : DEFAULT_ROW_CAP,
-                req.queryTimeoutSeconds() != null ? req.queryTimeoutSeconds() : DEFAULT_QUERY_TIMEOUT));
+                req.queryTimeoutSeconds() != null ? req.queryTimeoutSeconds() : DEFAULT_QUERY_TIMEOUT);
+
+        if (Boolean.TRUE.equals(req.backfillEnabled())) {
+            entity.setBackfillEnabled(true);
+            entity.setBackfillWindowDays(req.backfillWindowDays() != null ? req.backfillWindowDays() : 30);
+        }
+
+        entity = repo.save(entity);
+
+        if (entity.isBackfillEnabled()) {
+            backfillRunner.triggerBackfill(entity.getId());
+        }
+
+        return entity;
     }
 
     public SourceMappingEntity update(Long id, SourceMappingRequest req) {

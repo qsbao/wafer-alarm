@@ -34,6 +34,7 @@ class BackfillRunnerIntegrationTest {
     @Autowired BackfillRunner backfillRunner;
     @Autowired EvaluatorRunner evaluatorRunner;
     @Autowired RuleStateRepository ruleStateRepo;
+    @Autowired SourceMappingService sourceMappingService;
 
     @BeforeEach
     void setUp() {
@@ -259,6 +260,37 @@ class BackfillRunnerIntegrationTest {
         assertThat(completedTask.getRowsProcessed()).isEqualTo(5 + 1); // previous 5 + 1 new
         assertThat(measurementRepo.findAll()).hasSize(1);
         assertThat(measurementRepo.findAll().getFirst().getWaferId()).isEqualTo("W-REMAINING");
+    }
+
+    @Test
+    void creating_mapping_with_backfill_enabled_triggers_backfill() throws Exception {
+        var param = parameterRepo.save(new ParameterEntity("CD", "nm", 100.0, null));
+        var source = createSourceSystem();
+
+        // Insert historical data
+        Instant tenDaysAgo = Instant.now().minus(10, ChronoUnit.DAYS);
+        jdbcTemplate.update(
+                "INSERT INTO fake_source (wafer_id, measured_value, ts, tool, recipe, product, lot_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "W-AUTO", 95.0, java.sql.Timestamp.from(tenDaysAgo), "TOOL-A", "RCP-1", "PROD-X", "LOT-1");
+
+        // Create mapping via the service (simulating the API call)
+        var req = new SourceMappingRequest(
+                source.getId(), param.getId(),
+                "SELECT wafer_id, measured_value, ts, tool, recipe, product, lot_id FROM fake_source WHERE ts > :watermark_low AND ts <= :watermark_high ORDER BY ts",
+                "measured_value", "ts",
+                "{\"tool\":\"tool\",\"recipe\":\"recipe\",\"product\":\"product\",\"lot_id\":\"lot_id\",\"wafer_id\":\"wafer_id\"}",
+                300, 10000, 30,
+                true, 30);  // backfillEnabled=true
+
+        var mapping = sourceMappingService.create(req);
+
+        // Wait for auto-triggered backfill to complete
+        var taskOpt = backfillTaskRepo.findBySourceMappingId(mapping.getId());
+        assertThat(taskOpt).isPresent();
+        awaitTaskCompletion(taskOpt.get().getId(), 10);
+
+        assertThat(measurementRepo.findAll()).hasSize(1);
+        assertThat(measurementRepo.findAll().getFirst().getWaferId()).isEqualTo("W-AUTO");
     }
 
     private void awaitTaskCompletion(Long taskId, int timeoutSeconds) throws InterruptedException {
