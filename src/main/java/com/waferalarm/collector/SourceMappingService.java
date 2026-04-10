@@ -62,6 +62,8 @@ public class SourceMappingService {
         entity.setPollIntervalSeconds(req.pollIntervalSeconds() != null ? req.pollIntervalSeconds() : DEFAULT_POLL_INTERVAL);
         entity.setRowCap(req.rowCap() != null ? req.rowCap() : DEFAULT_ROW_CAP);
         entity.setQueryTimeoutSeconds(req.queryTimeoutSeconds() != null ? req.queryTimeoutSeconds() : DEFAULT_QUERY_TIMEOUT);
+        entity.setBackfillEnabled(Boolean.TRUE.equals(req.backfillEnabled()));
+        entity.setBackfillWindowDays(req.backfillWindowDays() != null ? req.backfillWindowDays() : 30);
         return repo.save(entity);
     }
 
