@@ -1,7 +1,10 @@
 package com.waferalarm.catalog;
 
+import com.waferalarm.audit.AuditLogger;
+import com.waferalarm.domain.AuditLogRepository;
 import com.waferalarm.domain.ParameterEntity;
 import com.waferalarm.domain.ParameterRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -19,7 +22,9 @@ class CatalogServiceTest {
     @BeforeEach
     void setUp() {
         repo = mock(ParameterRepository.class);
-        service = new CatalogService(repo);
+        var auditLogRepo = mock(AuditLogRepository.class);
+        var auditLogger = new AuditLogger(auditLogRepo, new ObjectMapper());
+        service = new CatalogService(repo, auditLogger);
     }
 
     // --- Validation: lower < upper ---

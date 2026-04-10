@@ -1,5 +1,6 @@
 package com.waferalarm.web;
 
+import com.waferalarm.audit.AuditLogger;
 import com.waferalarm.domain.LimitAuditLogEntity;
 import com.waferalarm.domain.LimitAuditLogRepository;
 import com.waferalarm.domain.ParameterLimitEntity;
@@ -18,10 +19,12 @@ public class ParameterLimitController {
 
     private final ParameterLimitRepository repo;
     private final LimitAuditLogRepository auditRepo;
+    private final AuditLogger auditLogger;
 
-    public ParameterLimitController(ParameterLimitRepository repo, LimitAuditLogRepository auditRepo) {
+    public ParameterLimitController(ParameterLimitRepository repo, LimitAuditLogRepository auditRepo, AuditLogger auditLogger) {
         this.repo = repo;
         this.auditRepo = auditRepo;
+        this.auditLogger = auditLogger;
     }
 
     @GetMapping
@@ -45,12 +48,14 @@ public class ParameterLimitController {
         auditRepo.save(new LimitAuditLogEntity(
                 saved.getId(), saved.getParameterId(), "CREATE",
                 saved.getContextMatchJson(), saved.getUpperLimit(), saved.getLowerLimit()));
+        auditLogger.log("PARAMETER_LIMIT", saved.getId(), "CREATE", null, limitSnapshot(saved));
         return ResponseEntity.status(HttpStatus.CREATED).body(LimitResponse.from(saved, false));
     }
 
     @PutMapping("/{id}")
     public ResponseEntity<LimitResponse> update(@PathVariable Long id, @RequestBody LimitRequest req) {
         return repo.findById(id).map(entity -> {
+            var before = limitSnapshot(entity);
             entity.setUpperLimit(req.upperLimit());
             entity.setLowerLimit(req.lowerLimit());
             if (req.contextMatchJson() != null) {
@@ -60,6 +65,7 @@ public class ParameterLimitController {
             auditRepo.save(new LimitAuditLogEntity(
                     saved.getId(), saved.getParameterId(), "UPDATE",
                     saved.getContextMatchJson(), saved.getUpperLimit(), saved.getLowerLimit()));
+            auditLogger.log("PARAMETER_LIMIT", saved.getId(), "UPDATE", before, limitSnapshot(saved));
             return ResponseEntity.ok(LimitResponse.from(saved, false));
         }).orElse(ResponseEntity.notFound().build());
     }
@@ -71,8 +77,18 @@ public class ParameterLimitController {
         auditRepo.save(new LimitAuditLogEntity(
                 entity.getId(), entity.getParameterId(), "DELETE",
                 entity.getContextMatchJson(), entity.getUpperLimit(), entity.getLowerLimit()));
+        auditLogger.log("PARAMETER_LIMIT", entity.getId(), "DELETE", limitSnapshot(entity), null);
         repo.deleteById(id);
         return ResponseEntity.noContent().build();
+    }
+
+    private Map<String, Object> limitSnapshot(ParameterLimitEntity e) {
+        Map<String, Object> map = new HashMap<>();
+        map.put("parameterId", e.getParameterId());
+        map.put("contextMatchJson", e.getContextMatchJson());
+        map.put("upperLimit", e.getUpperLimit());
+        map.put("lowerLimit", e.getLowerLimit());
+        return map;
     }
 
     private List<LimitResponse> withAmbiguityFlags(List<ParameterLimitEntity> limits) {

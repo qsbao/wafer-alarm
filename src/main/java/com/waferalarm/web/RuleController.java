@@ -1,11 +1,13 @@
 package com.waferalarm.web;
 
+import com.waferalarm.audit.AuditLogger;
 import com.waferalarm.domain.*;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/rules")
@@ -13,10 +15,12 @@ public class RuleController {
 
     private final RuleRepository ruleRepo;
     private final RuleVersionRepository versionRepo;
+    private final AuditLogger auditLogger;
 
-    public RuleController(RuleRepository ruleRepo, RuleVersionRepository versionRepo) {
+    public RuleController(RuleRepository ruleRepo, RuleVersionRepository versionRepo, AuditLogger auditLogger) {
         this.ruleRepo = ruleRepo;
         this.versionRepo = versionRepo;
+        this.auditLogger = auditLogger;
     }
 
     @GetMapping
@@ -41,12 +45,14 @@ public class RuleController {
         rule.setCurrentVersionId(version.getId());
         rule = ruleRepo.save(rule);
 
+        auditLogger.log("RULE", rule.getId(), "CREATE", null, ruleSnapshot(rule));
         return ResponseEntity.status(HttpStatus.CREATED).body(RuleDto.from(rule));
     }
 
     @PutMapping("/{id}")
     public ResponseEntity<RuleDto> update(@PathVariable Long id, @RequestBody RuleRequest req) {
         return ruleRepo.findById(id).map(rule -> {
+            var before = ruleSnapshot(rule);
             rule.setSeverity(req.severity());
             rule.setRuleType(req.ruleType());
             rule.setAbsoluteDelta(req.absoluteDelta());
@@ -61,6 +67,7 @@ public class RuleController {
 
             rule.setCurrentVersionId(version.getId());
             rule = ruleRepo.save(rule);
+            auditLogger.log("RULE", rule.getId(), "UPDATE", before, ruleSnapshot(rule));
             return ResponseEntity.ok(RuleDto.from(rule));
         }).orElse(ResponseEntity.notFound().build());
     }
@@ -68,6 +75,7 @@ public class RuleController {
     @PostMapping("/{id}/disable")
     public ResponseEntity<RuleDto> disable(@PathVariable Long id) {
         return ruleRepo.findById(id).map(rule -> {
+            var before = ruleSnapshot(rule);
             rule.setEnabled(false);
 
             var version = new RuleVersionEntity(
@@ -76,6 +84,7 @@ public class RuleController {
             rule.setCurrentVersionId(version.getId());
 
             rule = ruleRepo.save(rule);
+            auditLogger.log("RULE", rule.getId(), "DISABLE", before, ruleSnapshot(rule));
             return ResponseEntity.ok(RuleDto.from(rule));
         }).orElse(ResponseEntity.notFound().build());
     }
@@ -83,6 +92,7 @@ public class RuleController {
     @PostMapping("/{id}/enable")
     public ResponseEntity<RuleDto> enable(@PathVariable Long id) {
         return ruleRepo.findById(id).map(rule -> {
+            var before = ruleSnapshot(rule);
             rule.setEnabled(true);
 
             var version = new RuleVersionEntity(
@@ -91,8 +101,17 @@ public class RuleController {
             rule.setCurrentVersionId(version.getId());
 
             rule = ruleRepo.save(rule);
+            auditLogger.log("RULE", rule.getId(), "ENABLE", before, ruleSnapshot(rule));
             return ResponseEntity.ok(RuleDto.from(rule));
         }).orElse(ResponseEntity.notFound().build());
+    }
+
+    private Map<String, Object> ruleSnapshot(RuleEntity r) {
+        return Map.of(
+                "ruleType", r.getRuleType().name(),
+                "severity", r.getSeverity().name(),
+                "enabled", r.isEnabled(),
+                "parameterId", r.getParameterId());
     }
 
     @GetMapping("/{id}/versions")

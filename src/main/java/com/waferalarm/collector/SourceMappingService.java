@@ -1,10 +1,12 @@
 package com.waferalarm.collector;
 
+import com.waferalarm.audit.AuditLogger;
 import com.waferalarm.domain.SourceMappingEntity;
 import com.waferalarm.domain.SourceMappingRepository;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class SourceMappingService {
@@ -15,10 +17,12 @@ public class SourceMappingService {
 
     private final SourceMappingRepository repo;
     private final BackfillRunner backfillRunner;
+    private final AuditLogger auditLogger;
 
-    public SourceMappingService(SourceMappingRepository repo, BackfillRunner backfillRunner) {
+    public SourceMappingService(SourceMappingRepository repo, BackfillRunner backfillRunner, AuditLogger auditLogger) {
         this.repo = repo;
         this.backfillRunner = backfillRunner;
+        this.auditLogger = auditLogger;
     }
 
     public List<SourceMappingEntity> listAll() {
@@ -41,6 +45,7 @@ public class SourceMappingService {
         }
 
         entity = repo.save(entity);
+        auditLogger.log("SOURCE_MAPPING", entity.getId(), "CREATE", null, smSnapshot(entity));
 
         if (entity.isBackfillEnabled()) {
             backfillRunner.triggerBackfill(entity.getId());
@@ -53,6 +58,7 @@ public class SourceMappingService {
         validate(req);
         var entity = repo.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Source mapping not found: " + id));
+        var before = smSnapshot(entity);
         entity.setSourceSystemId(req.sourceSystemId());
         entity.setParameterId(req.parameterId());
         entity.setQueryTemplate(req.queryTemplate());
@@ -64,21 +70,36 @@ public class SourceMappingService {
         entity.setQueryTimeoutSeconds(req.queryTimeoutSeconds() != null ? req.queryTimeoutSeconds() : DEFAULT_QUERY_TIMEOUT);
         entity.setBackfillEnabled(Boolean.TRUE.equals(req.backfillEnabled()));
         entity.setBackfillWindowDays(req.backfillWindowDays() != null ? req.backfillWindowDays() : 30);
-        return repo.save(entity);
+        var saved = repo.save(entity);
+        auditLogger.log("SOURCE_MAPPING", saved.getId(), "UPDATE", before, smSnapshot(saved));
+        return saved;
     }
 
     public SourceMappingEntity disable(Long id) {
         var entity = repo.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Source mapping not found: " + id));
+        var before = smSnapshot(entity);
         entity.setEnabled(false);
-        return repo.save(entity);
+        var saved = repo.save(entity);
+        auditLogger.log("SOURCE_MAPPING", saved.getId(), "DISABLE", before, smSnapshot(saved));
+        return saved;
     }
 
     public SourceMappingEntity enable(Long id) {
         var entity = repo.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Source mapping not found: " + id));
+        var before = smSnapshot(entity);
         entity.setEnabled(true);
-        return repo.save(entity);
+        var saved = repo.save(entity);
+        auditLogger.log("SOURCE_MAPPING", saved.getId(), "ENABLE", before, smSnapshot(saved));
+        return saved;
+    }
+
+    private Map<String, Object> smSnapshot(SourceMappingEntity e) {
+        return Map.of(
+                "queryTemplate", e.getQueryTemplate(),
+                "parameterId", e.getParameterId(),
+                "enabled", e.isEnabled());
     }
 
     private void validate(SourceMappingRequest req) {
