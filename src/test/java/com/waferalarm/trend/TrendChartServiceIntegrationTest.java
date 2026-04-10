@@ -209,6 +209,33 @@ class TrendChartServiceIntegrationTest {
     }
 
     @Test
+    void multi_parameter_overlay() throws Exception {
+        var param1 = parameterRepo.save(new ParameterEntity("CD", "nm", 100.0, 0.0));
+        var param2 = parameterRepo.save(new ParameterEntity("Resistance", "ohm", 200.0, 50.0));
+        var t = Instant.parse("2024-01-01T00:00:00Z");
+        measurementRepo.save(new MeasurementEntity(param1.getId(), "W1", 10.0, t, "T1", "R1", "P1", "L1"));
+        measurementRepo.save(new MeasurementEntity(param2.getId(), "W1", 100.0, t, "T1", "R1", "P1", "L1"));
+
+        mvc.perform(get("/api/trend-chart/multi")
+                        .param("parameterIds", param1.getId().toString(), param2.getId().toString())
+                        .param("from", "2024-01-01T00:00:00Z")
+                        .param("to", "2024-01-02T00:00:00Z"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", aMapWithSize(2)))
+                .andExpect(jsonPath("$['" + param1.getId() + "'].points[0].value", is(10.0)))
+                .andExpect(jsonPath("$['" + param2.getId() + "'].points[0].value", is(100.0)));
+    }
+
+    @Test
+    void multi_parameter_rejects_more_than_5() throws Exception {
+        mvc.perform(get("/api/trend-chart/multi")
+                        .param("parameterIds", "1", "2", "3", "4", "5", "6")
+                        .param("from", "2024-01-01T00:00:00Z")
+                        .param("to", "2024-01-02T00:00:00Z"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void empty_measurements_returns_empty_list() throws Exception {
         var param = parameterRepo.save(new ParameterEntity("CD", "nm", 100.0, 0.0));
 
