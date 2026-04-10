@@ -1,5 +1,6 @@
 package com.waferalarm.collector;
 
+import com.waferalarm.catalog.UnmappedDataService;
 import com.waferalarm.domain.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -30,6 +31,7 @@ class MultiZoneCollectorTest {
     @Autowired ParameterLimitRepository parameterLimitRepo;
     @Autowired BackfillTaskRepository backfillTaskRepo;
     @Autowired SourceConnector connector;
+    @Autowired UnmappedDataService unmappedDataService;
 
     @BeforeEach
     void setUp() {
@@ -92,7 +94,7 @@ class MultiZoneCollectorTest {
         var config = new CollectorConfig(ownedIds);
         var executor = java.util.concurrent.Executors.newSingleThreadExecutor();
         return new CollectorRunner(connector, sourceMappingRepo, measurementRepo,
-                watermarkRepo, connectorRunRepo, executor, config);
+                watermarkRepo, connectorRunRepo, executor, config, unmappedDataService);
     }
 
     @Test
