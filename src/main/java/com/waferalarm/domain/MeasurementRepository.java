@@ -22,5 +22,17 @@ public interface MeasurementRepository extends JpaRepository<MeasurementEntity, 
     List<MeasurementEntity> findFiltered(Long parameterId, Instant from, Instant to,
                                          String tool, String recipe, String product, String lotId);
 
+    @Query("SELECT DISTINCT m.tool FROM MeasurementEntity m WHERE m.tool IS NOT NULL ORDER BY m.tool")
+    List<String> findDistinctTools();
+
+    @Query("SELECT DISTINCT m.recipe FROM MeasurementEntity m WHERE m.recipe IS NOT NULL ORDER BY m.recipe")
+    List<String> findDistinctRecipes();
+
+    @Query("SELECT DISTINCT m.product FROM MeasurementEntity m WHERE m.product IS NOT NULL ORDER BY m.product")
+    List<String> findDistinctProducts();
+
+    @Query("SELECT DISTINCT m.lotId FROM MeasurementEntity m WHERE m.lotId IS NOT NULL ORDER BY m.lotId")
+    List<String> findDistinctLots();
+
     boolean existsByWaferIdAndParameterId(String waferId, Long parameterId);
 }

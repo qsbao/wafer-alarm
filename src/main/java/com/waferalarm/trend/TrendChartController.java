@@ -1,5 +1,6 @@
 package com.waferalarm.trend;
 
+import com.waferalarm.domain.MeasurementRepository;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -16,9 +17,12 @@ import java.util.Map;
 public class TrendChartController {
 
     private final TrendChartService trendChartService;
+    private final MeasurementRepository measurementRepo;
 
-    public TrendChartController(TrendChartService trendChartService) {
+    public TrendChartController(TrendChartService trendChartService,
+                                MeasurementRepository measurementRepo) {
         this.trendChartService = trendChartService;
+        this.measurementRepo = measurementRepo;
     }
 
     @GetMapping
@@ -50,5 +54,15 @@ public class TrendChartController {
             result.put(pid, trendChartService.query(pid, from, to, tool, recipe, product, lot));
         }
         return ResponseEntity.ok(result);
+    }
+
+    @GetMapping("/filters")
+    public FilterValuesResponse getFilterValues() {
+        return new FilterValuesResponse(
+                measurementRepo.findDistinctTools(),
+                measurementRepo.findDistinctRecipes(),
+                measurementRepo.findDistinctProducts(),
+                measurementRepo.findDistinctLots()
+        );
     }
 }
