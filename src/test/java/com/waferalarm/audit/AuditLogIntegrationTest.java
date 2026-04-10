@@ -7,12 +7,14 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -22,6 +24,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class AuditLogIntegrationTest {
 
     @Autowired MockMvc mvc;
+    @Autowired JdbcTemplate jdbcTemplate;
     @Autowired AuditLogRepository auditLogRepo;
     @Autowired ParameterRepository parameterRepo;
     @Autowired ParameterLimitRepository limitRepo;
@@ -38,7 +41,8 @@ class AuditLogIntegrationTest {
     void setUp() {
         alarmRepo.deleteAll();
         measurementRepo.deleteAll();
-        auditLogRepo.deleteAll();
+        // audit_log has append-only triggers; TRUNCATE bypasses row-level triggers
+        jdbcTemplate.execute("TRUNCATE TABLE audit_log");
         limitAuditRepo.deleteAll();
         limitRepo.deleteAll();
         ruleStateRepo.deleteAll();
@@ -362,5 +366,130 @@ class AuditLogIntegrationTest {
 
         var audits = auditLogRepo.findFiltered("SOURCE_MAPPING", mapping.getId(), "DISABLE", null, null);
         assertThat(audits).hasSize(1);
+    }
+
+    // --- Audit log API ---
+
+    @Test
+    void audit_api_lists_all_entries() throws Exception {
+        mvc.perform(post("/api/parameters")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"name":"CD","unit":"nm","defaultUpperLimit":100.0}
+                    """))
+                .andExpect(status().isCreated());
+
+        mvc.perform(get("/api/audit-log"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].entityType", is("PARAMETER")))
+                .andExpect(jsonPath("$[0].action", is("CREATE")));
+    }
+
+    @Test
+    void audit_api_filters_by_entity_type() throws Exception {
+        // Create a parameter and a source system to generate different entity types
+        mvc.perform(post("/api/parameters")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"name":"CD","unit":"nm"}
+                    """))
+                .andExpect(status().isCreated());
+
+        mvc.perform(post("/api/source-systems")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"name":"MES","host":"db1","port":3306,"dbName":"mes","credentialsRef":"ref","networkZone":"z1"}
+                    """))
+                .andExpect(status().isCreated());
+
+        mvc.perform(get("/api/audit-log").param("entityType", "PARAMETER"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].entityType", is("PARAMETER")));
+    }
+
+    @Test
+    void audit_api_filters_by_entity_id() throws Exception {
+        var param = parameterRepo.save(new ParameterEntity("CD", "nm", 100.0, null));
+
+        mvc.perform(post("/api/parameters/" + param.getId() + "/disable"))
+                .andExpect(status().isOk());
+
+        mvc.perform(get("/api/audit-log")
+                .param("entityType", "PARAMETER")
+                .param("entityId", param.getId().toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].entityId", is(param.getId().intValue())));
+    }
+
+    @Test
+    void audit_api_filters_by_action() throws Exception {
+        var param = parameterRepo.save(new ParameterEntity("CD", "nm", 100.0, null));
+        // Update it (generates UPDATE audit)
+        mvc.perform(put("/api/parameters/" + param.getId())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"name":"CD-v2","unit":"nm"}
+                    """))
+                .andExpect(status().isOk());
+        // Disable it (generates DISABLE audit)
+        mvc.perform(post("/api/parameters/" + param.getId() + "/disable"))
+                .andExpect(status().isOk());
+
+        mvc.perform(get("/api/audit-log").param("action", "DISABLE"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].action", is("DISABLE")));
+    }
+
+    @Test
+    void audit_api_filters_by_time_range() throws Exception {
+        mvc.perform(post("/api/parameters")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"name":"CD","unit":"nm"}
+                    """))
+                .andExpect(status().isCreated());
+
+        // Query with a future 'from' should return nothing
+        mvc.perform(get("/api/audit-log").param("from", "2099-01-01T00:00:00Z"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(0)));
+
+        // Query with a past 'from' should return the entry
+        mvc.perform(get("/api/audit-log").param("from", "2020-01-01T00:00:00Z"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)));
+    }
+
+    // --- Append-only constraint ---
+
+    @Test
+    void audit_log_rejects_update_at_db_level() throws Exception {
+        // Insert a row directly
+        jdbcTemplate.update(
+                "INSERT INTO audit_log (entity_type, entity_id, action, actor) VALUES (?, ?, ?, ?)",
+                "TEST", 1L, "CREATE", "system");
+
+        // Attempt UPDATE — should fail due to trigger
+        assertThat(org.junit.jupiter.api.Assertions.assertThrows(
+                org.springframework.dao.DataAccessException.class,
+                () -> jdbcTemplate.update("UPDATE audit_log SET action = 'MODIFIED' WHERE entity_type = 'TEST'")
+        )).isNotNull();
+    }
+
+    @Test
+    void audit_log_rejects_delete_at_db_level() throws Exception {
+        jdbcTemplate.update(
+                "INSERT INTO audit_log (entity_type, entity_id, action, actor) VALUES (?, ?, ?, ?)",
+                "TEST", 1L, "CREATE", "system");
+
+        // Attempt DELETE — should fail due to trigger
+        assertThat(org.junit.jupiter.api.Assertions.assertThrows(
+                org.springframework.dao.DataAccessException.class,
+                () -> jdbcTemplate.update("DELETE FROM audit_log WHERE entity_type = 'TEST'")
+        )).isNotNull();
     }
 }
