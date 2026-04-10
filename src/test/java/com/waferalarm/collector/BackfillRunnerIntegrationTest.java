@@ -9,8 +9,11 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 
+import org.springframework.beans.factory.annotation.Qualifier;
+
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -35,6 +38,7 @@ class BackfillRunnerIntegrationTest {
     @Autowired EvaluatorRunner evaluatorRunner;
     @Autowired RuleStateRepository ruleStateRepo;
     @Autowired SourceMappingService sourceMappingService;
+    @Autowired @Qualifier("backfillExecutor") ExecutorService backfillExecutor;
 
     @BeforeEach
     void setUp() {
@@ -291,6 +295,30 @@ class BackfillRunnerIntegrationTest {
 
         assertThat(measurementRepo.findAll()).hasSize(1);
         assertThat(measurementRepo.findAll().getFirst().getWaferId()).isEqualTo("W-AUTO");
+    }
+
+    @Test
+    void backfill_runs_in_low_priority_thread_pool() throws Exception {
+        var param = parameterRepo.save(new ParameterEntity("CD", "nm", 100.0, null));
+        var source = createSourceSystem();
+        var mapping = createMapping(source.getId(), param.getId());
+
+        Instant tenDaysAgo = Instant.now().minus(10, ChronoUnit.DAYS);
+        jdbcTemplate.update(
+                "INSERT INTO fake_source (wafer_id, measured_value, ts, tool, recipe, product, lot_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "W-THREAD", 95.0, java.sql.Timestamp.from(tenDaysAgo), "TOOL-A", "RCP-1", "PROD-X", "LOT-1");
+
+        var task = backfillRunner.triggerBackfill(mapping.getId());
+        awaitTaskCompletion(task.getId(), 10);
+
+        // Verify the backfill executor uses low-priority threads
+        assertThat(backfillExecutor).isNotNull();
+        var future = backfillExecutor.submit(() -> {
+            Thread t = Thread.currentThread();
+            assertThat(t.getName()).startsWith("backfill-worker");
+            assertThat(t.getPriority()).isEqualTo(Thread.MIN_PRIORITY);
+        });
+        future.get(5, TimeUnit.SECONDS);
     }
 
     private void awaitTaskCompletion(Long taskId, int timeoutSeconds) throws InterruptedException {
