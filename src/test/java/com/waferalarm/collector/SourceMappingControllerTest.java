@@ -31,6 +31,8 @@ class SourceMappingControllerTest {
     @Autowired ParameterLimitRepository parameterLimitRepo;
     @Autowired CollectorWatermarkRepository watermarkRepo;
     @Autowired BackfillTaskRepository backfillTaskRepo;
+    @Autowired StagingUnmappedRepository unmappedRepo;
+    @Autowired StagingDismissedRepository dismissedRepo;
 
     Long sourceSystemId;
     Long parameterId;
@@ -46,6 +48,8 @@ class SourceMappingControllerTest {
         watermarkRepo.deleteAll();
         backfillTaskRepo.deleteAll();
         sourceMappingRepo.deleteAll();
+        unmappedRepo.deleteAll();
+        dismissedRepo.deleteAll();
         sourceSystemRepo.deleteAll();
         parameterRepo.deleteAll();
 

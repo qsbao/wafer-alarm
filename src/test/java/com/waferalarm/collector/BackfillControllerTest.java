@@ -36,6 +36,8 @@ class BackfillControllerTest {
     @Autowired RuleVersionRepository ruleVersionRepo;
     @Autowired ParameterLimitRepository parameterLimitRepo;
     @Autowired RuleStateRepository ruleStateRepo;
+    @Autowired StagingUnmappedRepository unmappedRepo;
+    @Autowired StagingDismissedRepository dismissedRepo;
 
     @BeforeEach
     void setUp() {
@@ -49,6 +51,8 @@ class BackfillControllerTest {
         ruleRepo.deleteAll();
         watermarkRepo.deleteAll();
         sourceMappingRepo.deleteAll();
+        unmappedRepo.deleteAll();
+        dismissedRepo.deleteAll();
         sourceSystemRepo.deleteAll();
         parameterRepo.deleteAll();
     }

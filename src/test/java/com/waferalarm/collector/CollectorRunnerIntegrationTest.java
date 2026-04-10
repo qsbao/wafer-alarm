@@ -30,6 +30,8 @@ class CollectorRunnerIntegrationTest {
     @Autowired ParameterLimitRepository parameterLimitRepo;
     @Autowired CollectorRunner collectorRunner;
     @Autowired BackfillTaskRepository backfillTaskRepo;
+    @Autowired StagingUnmappedRepository unmappedRepo;
+    @Autowired StagingDismissedRepository dismissedRepo;
 
     @BeforeEach
     void setUp() {
@@ -42,6 +44,8 @@ class CollectorRunnerIntegrationTest {
         watermarkRepo.deleteAll();
         backfillTaskRepo.deleteAll();
         sourceMappingRepo.deleteAll();
+        unmappedRepo.deleteAll();
+        dismissedRepo.deleteAll();
         sourceSystemRepo.deleteAll();
         parameterRepo.deleteAll();
 

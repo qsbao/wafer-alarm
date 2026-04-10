@@ -31,6 +31,8 @@ class HealthServiceTest {
     @Autowired ParameterLimitRepository parameterLimitRepo;
     @Autowired RuleRepository ruleRepo;
     @Autowired MeasurementRepository measurementRepo;
+    @Autowired StagingUnmappedRepository unmappedRepo;
+    @Autowired StagingDismissedRepository dismissedRepo;
 
     @BeforeEach
     void clean() {
@@ -44,6 +46,8 @@ class HealthServiceTest {
         ruleVersionRepo.deleteAll();
         ruleRepo.deleteAll();
         mappingRepo.deleteAll();
+        unmappedRepo.deleteAll();
+        dismissedRepo.deleteAll();
         sourceSystemRepo.deleteAll();
         parameterRepo.deleteAll();
     }

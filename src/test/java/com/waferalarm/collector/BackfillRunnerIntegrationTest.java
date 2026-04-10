@@ -39,6 +39,8 @@ class BackfillRunnerIntegrationTest {
     @Autowired RuleStateRepository ruleStateRepo;
     @Autowired SourceMappingService sourceMappingService;
     @Autowired @Qualifier("backfillExecutor") ExecutorService backfillExecutor;
+    @Autowired StagingUnmappedRepository unmappedRepo;
+    @Autowired StagingDismissedRepository dismissedRepo;
 
     @BeforeEach
     void setUp() {
@@ -52,6 +54,8 @@ class BackfillRunnerIntegrationTest {
         ruleRepo.deleteAll();
         watermarkRepo.deleteAll();
         sourceMappingRepo.deleteAll();
+        unmappedRepo.deleteAll();
+        dismissedRepo.deleteAll();
         sourceSystemRepo.deleteAll();
         parameterRepo.deleteAll();
 

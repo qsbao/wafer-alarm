@@ -36,6 +36,8 @@ class AuditLogIntegrationTest {
     @Autowired MeasurementRepository measurementRepo;
     @Autowired SourceSystemRepository sourceSystemRepo;
     @Autowired SourceMappingRepository sourceMappingRepo;
+    @Autowired StagingUnmappedRepository unmappedRepo;
+    @Autowired StagingDismissedRepository dismissedRepo;
 
     @BeforeEach
     void setUp() {
@@ -49,6 +51,8 @@ class AuditLogIntegrationTest {
         ruleVersionRepo.deleteAll();
         ruleRepo.deleteAll();
         sourceMappingRepo.deleteAll();
+        unmappedRepo.deleteAll();
+        dismissedRepo.deleteAll();
         sourceSystemRepo.deleteAll();
         parameterRepo.deleteAll();
     }
