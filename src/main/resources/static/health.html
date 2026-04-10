@@ -23,109 +23,204 @@
     .alert { padding: 12px 16px; border-radius: 6px; margin-bottom: 12px; font-size: 0.875rem; }
     .alert-danger { background: #fdecea; border: 1px solid #f5c6cb; color: #c62828; }
     .alert-success { background: #e8f5e9; border: 1px solid #c8e6c9; color: #2e7d32; }
+    .alert-warn { background: #fff3e0; border: 1px solid #ffe0b2; color: #e65100; }
     .status-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.7rem; font-weight: 600; }
     .status-ok { background: #e8f5e9; color: #2e7d32; }
     .status-warn { background: #fff3e0; color: #e65100; }
     .status-stale { background: #fbe9e7; color: #c62828; }
     .empty-state { text-align: center; padding: 48px 20px; color: #888; font-size: 1rem; }
+    .stalled-banner { background: #c62828; color: white; padding: 16px 20px; border-radius: 8px; margin-bottom: 20px; font-size: 1rem; font-weight: 600; }
+    .stalled-banner .detail { font-weight: 400; font-size: 0.875rem; margin-top: 4px; opacity: 0.9; }
+    .metric-row { display: flex; gap: 16px; margin-bottom: 20px; }
+    .metric-card { flex: 1; background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); padding: 16px; text-align: center; }
+    .metric-value { font-size: 1.5rem; font-weight: 700; }
+    .metric-label { font-size: 0.75rem; color: #888; margin-top: 4px; }
+    .row-stalled td { background: #fff5f5; }
   </style>
 </head>
 <body>
   <div id="root"></div>
   <script type="text/babel">
     const { useState, useEffect } = React;
+    const e = React.createElement;
 
     function HealthPage() {
-      const [data, setData] = useState(null);
+      const [collectors, setCollectors] = useState(null);
+      const [report, setReport] = useState(null);
       const [error, setError] = useState(null);
 
-      const fetchHealth = () => {
-        fetch('/api/health/collectors')
-          .then(r => { if (!r.ok) throw new Error('Failed to fetch'); return r.json(); })
-          .then(setData)
-          .catch(e => setError(e.message));
+      const fetchAll = () => {
+        Promise.all([
+          fetch('/api/health/collectors').then(r => r.ok ? r.json() : Promise.reject('Failed')),
+          fetch('/api/health/report').then(r => r.ok ? r.json() : Promise.reject('Failed'))
+        ]).then(([c, r]) => { setCollectors(c); setReport(r); })
+          .catch(err => setError(String(err)));
       };
 
-      useEffect(() => {
-        fetchHealth();
-        const interval = setInterval(fetchHealth, 30000);
-        return () => clearInterval(interval);
-      }, []);
+      useEffect(() => { fetchAll(); const iv = setInterval(fetchAll, 30000); return () => clearInterval(iv); }, []);
+
+      if (error) return e('div', {className:'container'}, e('div', {className:'alert alert-danger'}, 'Error: ' + error));
+      if (!report || !collectors) return e('div', {className:'container'}, 'Loading...');
+
+      const stalledConnectors = report.connectors.filter(c => c.stalled);
+      const totalErrors = report.connectors.reduce((s, c) => s + c.errorCount, 0);
 
       const heartbeatAge = (ts) => {
-        const ago = Date.now() - new Date(ts).getTime();
-        const mins = Math.floor(ago / 60000);
-        if (mins < 2) return { label: 'Active', cls: 'status-ok' };
-        if (mins < 10) return { label: `${mins}m ago`, cls: 'status-warn' };
-        return { label: `${mins}m ago`, cls: 'status-stale' };
+        if (!ts) return {label: 'Never', cls: 'status-stale'};
+        const mins = Math.floor((Date.now() - new Date(ts).getTime()) / 60000);
+        if (mins < 2) return {label: 'Active', cls: 'status-ok'};
+        if (mins < 10) return {label: mins+'m ago', cls: 'status-warn'};
+        return {label: mins+'m ago', cls: 'status-stale'};
       };
 
-      if (error) return React.createElement('div', { className: 'container' },
-        React.createElement('div', { className: 'alert alert-danger' }, 'Error: ' + error));
+      const fmtTime = (ts) => ts ? new Date(ts).toLocaleString() : 'Never';
 
-      if (!data) return React.createElement('div', { className: 'container' }, 'Loading...');
+      return e('div', {className:'container'},
+        e('h1', null, 'System Health',
+          e('span', {className:'nav-links'},
+            e('a', {href:'/'}, 'Alarms'),
+            e('a', {href:'/trend.html'}, 'Trend'),
+            e('a', {href:'/parameters.html'}, 'Parameters'),
+            e('a', {href:'/source-systems.html'}, 'Sources'),
+            e('a', {href:'/source-mappings.html'}, 'Mappings'),
+            e('a', {href:'/audit-log.html'}, 'Audit')
+          )
+        ),
 
-      return React.createElement('div', { className: 'container' },
-        React.createElement('h1', null, 'System Health',
-          React.createElement('span', { className: 'nav-links' },
-            React.createElement('a', { href: '/' }, 'Alarms'),
-            React.createElement('a', { href: '/trend.html' }, 'Trend'),
-            React.createElement('a', { href: '/parameters.html' }, 'Parameters'),
-            React.createElement('a', { href: '/source-systems.html' }, 'Sources'),
-            React.createElement('a', { href: '/source-mappings.html' }, 'Mappings')
+        // STALLED CONNECTOR BANNER - most prominent element
+        stalledConnectors.length > 0 && e('div', {className:'stalled-banner'},
+          stalledConnectors.length + ' STALLED CONNECTOR' + (stalledConnectors.length > 1 ? 'S' : '') + ' DETECTED',
+          e('div', {className:'detail'},
+            'Mapping IDs: ' + stalledConnectors.map(c => c.sourceMappingId).join(', ') +
+            ' — zero rows for ' + stalledConnectors.map(c => c.consecutiveZeroRowTicks).join('/') + ' consecutive ticks'
+          )
+        ),
+
+        // Summary metrics
+        e('div', {className:'metric-row'},
+          e('div', {className:'metric-card'},
+            e('div', {className:'metric-value', style:{color: stalledConnectors.length > 0 ? '#c62828' : '#2e7d32'}},
+              stalledConnectors.length),
+            e('div', {className:'metric-label'}, 'Stalled Connectors')
+          ),
+          e('div', {className:'metric-card'},
+            e('div', {className:'metric-value', style:{color: totalErrors > 0 ? '#e65100' : '#2e7d32'}}, totalErrors),
+            e('div', {className:'metric-label'}, 'Connector Errors (24h)')
+          ),
+          e('div', {className:'metric-card'},
+            e('div', {className:'metric-value'}, report.evaluator.watermarkLagSeconds + 's'),
+            e('div', {className:'metric-label'}, 'Evaluator Lag')
+          ),
+          e('div', {className:'metric-card'},
+            e('div', {className:'metric-value'}, fmtTime(report.evaluator.lastTick)),
+            e('div', {className:'metric-label'}, 'Last Eval Tick')
           )
         ),
 
         // Overlap warnings
-        data.overlaps && data.overlaps.length > 0 && React.createElement('div', { className: 'card' },
-          React.createElement('h2', null, 'Configuration Warnings'),
-          data.overlaps.map((o, i) =>
-            React.createElement('div', { key: i, className: 'alert alert-danger' },
+        collectors.overlaps && collectors.overlaps.length > 0 && e('div', {className:'card'},
+          e('h2', null, 'Configuration Warnings'),
+          collectors.overlaps.map((o, i) =>
+            e('div', {key:i, className:'alert alert-danger'},
               o.message,
-              o.collectorIds && React.createElement('div', { style: { marginTop: 4, fontSize: '0.8rem' } },
-                'Collectors: ' + o.collectorIds.join(', ')
+              o.collectorIds && e('div', {style:{marginTop:4, fontSize:'0.8rem'}}, 'Collectors: ' + o.collectorIds.join(', '))
+            )
+          )
+        ),
+
+        // Connector health table
+        e('div', {className:'card'},
+          e('h2', null, 'Connector Health (per mapping)'),
+          report.connectors.length > 0
+            ? e('table', null,
+                e('thead', null,
+                  e('tr', null,
+                    e('th', null, 'Mapping ID'),
+                    e('th', null, 'Last Successful Tick'),
+                    e('th', null, 'Rows Pulled (24h)'),
+                    e('th', null, 'Errors (24h)'),
+                    e('th', null, 'Status')
+                  )
+                ),
+                e('tbody', null,
+                  report.connectors.map((c, i) =>
+                    e('tr', {key:i, className: c.stalled ? 'row-stalled' : ''},
+                      e('td', null, c.sourceMappingId),
+                      e('td', null, fmtTime(c.lastSuccessfulTick)),
+                      e('td', null, c.totalRowsPulled),
+                      e('td', {style:{color: c.errorCount > 0 ? '#c62828' : 'inherit'}}, c.errorCount),
+                      e('td', null,
+                        c.stalled
+                          ? e('span', {className:'status-badge status-stale'},
+                              'STALLED (' + c.consecutiveZeroRowTicks + ' ticks)')
+                          : c.errorCount > 0
+                            ? e('span', {className:'status-badge status-warn'}, 'Errors')
+                            : e('span', {className:'status-badge status-ok'}, 'OK')
+                      )
+                    )
+                  )
+                )
+              )
+            : e('div', {className:'empty-state'}, 'No connector mappings configured.')
+        ),
+
+        // Evaluator health
+        e('div', {className:'card'},
+          e('h2', null, 'Evaluator Health'),
+          e('table', null,
+            e('tbody', null,
+              e('tr', null,
+                e('td', {style:{fontWeight:600, width:'200px'}}, 'Last Tick'),
+                e('td', null, fmtTime(report.evaluator.lastTick))
+              ),
+              e('tr', null,
+                e('td', {style:{fontWeight:600}}, 'Watermark Lag'),
+                e('td', null,
+                  report.evaluator.watermarkLagSeconds + 's',
+                  report.evaluator.watermarkLagSeconds > 300 &&
+                    e('span', {className:'status-badge status-warn', style:{marginLeft:8}}, 'High lag')
+                )
+              ),
+              e('tr', null,
+                e('td', {style:{fontWeight:600}}, 'Errors (24h)'),
+                e('td', {style:{color: report.evaluator.errorCount > 0 ? '#c62828' : 'inherit'}},
+                  report.evaluator.errorCount)
               )
             )
           )
         ),
 
-        (!data.overlaps || data.overlaps.length === 0) && React.createElement('div', { className: 'card' },
-          React.createElement('div', { className: 'alert alert-success' }, 'No configuration overlaps detected.')
-        ),
-
         // Collector registrations
-        React.createElement('div', { className: 'card' },
-          React.createElement('h2', null, 'Collector Registrations'),
-          data.registrations && data.registrations.length > 0
-            ? React.createElement('table', null,
-                React.createElement('thead', null,
-                  React.createElement('tr', null,
-                    React.createElement('th', null, 'Collector ID'),
-                    React.createElement('th', null, 'Owned Source Systems'),
-                    React.createElement('th', null, 'Registered'),
-                    React.createElement('th', null, 'Last Heartbeat')
+        e('div', {className:'card'},
+          e('h2', null, 'Collector Registrations'),
+          collectors.registrations && collectors.registrations.length > 0
+            ? e('table', null,
+                e('thead', null,
+                  e('tr', null,
+                    e('th', null, 'Collector ID'),
+                    e('th', null, 'Owned Source Systems'),
+                    e('th', null, 'Registered'),
+                    e('th', null, 'Last Heartbeat')
                   )
                 ),
-                React.createElement('tbody', null,
-                  data.registrations.map((r, i) => {
+                e('tbody', null,
+                  collectors.registrations.map((r, i) => {
                     const hb = heartbeatAge(r.lastHeartbeatAt);
-                    return React.createElement('tr', { key: i },
-                      React.createElement('td', { style: { fontFamily: 'monospace', fontSize: '0.75rem' } }, r.collectorId),
-                      React.createElement('td', null, r.ownedSourceSystemIds === '*' ? 'All' : r.ownedSourceSystemIds),
-                      React.createElement('td', null, new Date(r.registeredAt).toLocaleString()),
-                      React.createElement('td', null,
-                        React.createElement('span', { className: 'status-badge ' + hb.cls }, hb.label)
-                      )
+                    return e('tr', {key:i},
+                      e('td', {style:{fontFamily:'monospace', fontSize:'0.75rem'}}, r.collectorId),
+                      e('td', null, r.ownedSourceSystemIds === '*' ? 'All' : r.ownedSourceSystemIds),
+                      e('td', null, new Date(r.registeredAt).toLocaleString()),
+                      e('td', null, e('span', {className:'status-badge ' + hb.cls}, hb.label))
                     );
                   })
                 )
               )
-            : React.createElement('div', { className: 'empty-state' }, 'No collectors registered.')
+            : e('div', {className:'empty-state'}, 'No collectors registered.')
         )
       );
     }
 
-    ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(HealthPage));
+    ReactDOM.createRoot(document.getElementById('root')).render(e(HealthPage));
   </script>
 </body>
 </html>
