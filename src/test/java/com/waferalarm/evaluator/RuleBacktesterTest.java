@@ -71,4 +71,80 @@ class RuleBacktesterTest {
         assertThat(result.violations()).extracting(BacktestViolation::waferId)
                 .containsExactly("W001", "W003");
     }
+
+    @Test
+    void roc_backtest_returns_violations() {
+        Instant now = Instant.now();
+        // Two measurements with large delta
+        measurementRepo.save(new MeasurementEntity(parameter.getId(), "W001", 50.0,
+                now.minus(3, ChronoUnit.DAYS), "TOOL-A", "RCP-1", "PROD-X", "LOT-1"));
+        measurementRepo.save(new MeasurementEntity(parameter.getId(), "W002", 70.0,
+                now.minus(2, ChronoUnit.DAYS), "TOOL-A", "RCP-1", "PROD-X", "LOT-1"));
+        measurementRepo.save(new MeasurementEntity(parameter.getId(), "W003", 72.0,
+                now.minus(1, ChronoUnit.DAYS), "TOOL-A", "RCP-1", "PROD-X", "LOT-1"));
+
+        var request = new BacktestRequest(
+                parameter.getId(),
+                RuleType.RATE_OF_CHANGE,
+                Severity.CRITICAL,
+                10.0, null, null, // absolute delta > 10
+                now.minus(7, ChronoUnit.DAYS),
+                now
+        );
+
+        BacktestResult result = backtester.run(request);
+
+        // W002 has delta 20 from W001 (>10), W003 has delta 2 from W002 (<=10)
+        assertThat(result.totalViolations()).isEqualTo(1);
+        assertThat(result.severityBreakdown()).containsEntry("CRITICAL", 1L);
+        assertThat(result.violations().getFirst().waferId()).isEqualTo("W002");
+    }
+
+    @Test
+    void backtest_does_not_persist_alarms_or_rule_state() {
+        limitRepo.save(new ParameterLimitEntity(parameter.getId(), "{}", 100.0, null));
+
+        Instant now = Instant.now();
+        measurementRepo.save(new MeasurementEntity(parameter.getId(), "W001", 150.0,
+                now.minus(1, ChronoUnit.DAYS), "TOOL-A", "RCP-1", "PROD-X", "LOT-1"));
+
+        var request = new BacktestRequest(
+                parameter.getId(),
+                RuleType.UPPER_THRESHOLD,
+                Severity.WARNING,
+                null, null, null,
+                now.minus(7, ChronoUnit.DAYS),
+                now
+        );
+
+        BacktestResult result = backtester.run(request);
+
+        assertThat(result.totalViolations()).isEqualTo(1);
+        // Verify no alarms or rule_state rows were created
+        assertThat(alarmRepo.findAll()).isEmpty();
+        assertThat(ruleStateRepo.findAll()).isEmpty();
+    }
+
+    @Test
+    void backtest_with_no_matching_measurements_returns_empty() {
+        limitRepo.save(new ParameterLimitEntity(parameter.getId(), "{}", 100.0, null));
+
+        Instant now = Instant.now();
+        // No measurements in the window
+
+        var request = new BacktestRequest(
+                parameter.getId(),
+                RuleType.UPPER_THRESHOLD,
+                Severity.WARNING,
+                null, null, null,
+                now.minus(7, ChronoUnit.DAYS),
+                now
+        );
+
+        BacktestResult result = backtester.run(request);
+
+        assertThat(result.totalViolations()).isEqualTo(0);
+        assertThat(result.severityBreakdown()).isEmpty();
+        assertThat(result.violations()).isEmpty();
+    }
 }
