@@ -9,5 +9,7 @@ public record SourceMappingRequest(
         String contextColumnMapping,
         Integer pollIntervalSeconds,
         Integer rowCap,
-        Integer queryTimeoutSeconds
+        Integer queryTimeoutSeconds,
+        Boolean backfillEnabled,
+        Integer backfillWindowDays
 ) {}
