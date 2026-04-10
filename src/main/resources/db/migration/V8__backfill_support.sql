@@ -20,3 +20,5 @@ CREATE TABLE backfill_task (
 
 CREATE INDEX idx_backfill_task_mapping ON backfill_task(source_mapping_id);
 CREATE INDEX idx_backfill_task_status ON backfill_task(status);
+
+ALTER TABLE measurement ADD COLUMN backfilled BOOLEAN NOT NULL DEFAULT FALSE;

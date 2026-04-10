@@ -72,6 +72,7 @@ public class BackfillRunner {
                     .toList();
 
             if (!newMeasurements.isEmpty()) {
+                newMeasurements.forEach(MeasurementEntity::markBackfilled);
                 measurementRepo.saveAll(newMeasurements);
             }
 

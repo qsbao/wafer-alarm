@@ -36,6 +36,9 @@ public class MeasurementEntity {
     @Column(name = "context_json")
     private String contextJson;
 
+    @Column(nullable = false)
+    private boolean backfilled = false;
+
     protected MeasurementEntity() {}
 
     public MeasurementEntity(Long parameterId, String waferId, double value, Instant ts, String tool, String recipe, String product, String lotId) {
@@ -61,6 +64,9 @@ public class MeasurementEntity {
     public String getProduct() { return product; }
     public String getLotId() { return lotId; }
     public String getContextJson() { return contextJson; }
+    public boolean isBackfilled() { return backfilled; }
+
+    public void markBackfilled() { this.backfilled = true; }
 
     public String deriveContextKey() {
         return "tool=" + (tool != null ? tool : "");

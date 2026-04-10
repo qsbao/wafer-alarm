@@ -1,6 +1,7 @@
 package com.waferalarm.collector;
 
 import com.waferalarm.domain.*;
+import com.waferalarm.evaluator.EvaluatorRunner;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -31,6 +32,8 @@ class BackfillRunnerIntegrationTest {
     @Autowired RuleVersionRepository ruleVersionRepo;
     @Autowired ParameterLimitRepository parameterLimitRepo;
     @Autowired BackfillRunner backfillRunner;
+    @Autowired EvaluatorRunner evaluatorRunner;
+    @Autowired RuleStateRepository ruleStateRepo;
 
     @BeforeEach
     void setUp() {
@@ -39,6 +42,7 @@ class BackfillRunnerIntegrationTest {
         alarmRepo.deleteAll();
         measurementRepo.deleteAll();
         parameterLimitRepo.deleteAll();
+        ruleStateRepo.deleteAll();
         ruleVersionRepo.deleteAll();
         ruleRepo.deleteAll();
         watermarkRepo.deleteAll();
@@ -168,6 +172,57 @@ class BackfillRunnerIntegrationTest {
         awaitTaskCompletion(task.getId(), 10);
 
         assertThat(backfillTaskRepo.findById(task.getId()).orElseThrow().getRowsProcessed()).isEqualTo(1);
+    }
+
+    @Test
+    void backfilled_measurements_do_not_generate_alarms() throws Exception {
+        var param = parameterRepo.save(new ParameterEntity("CD", "nm", 100.0, null));
+        var source = createSourceSystem();
+        var mapping = createMapping(source.getId(), param.getId());
+
+        // Create a threshold rule that would fire for value > 100
+        var rule = ruleRepo.save(new RuleEntity(param.getId(), RuleType.UPPER_THRESHOLD, Severity.WARNING));
+
+        // Insert violating data from 5 days ago (value 150 exceeds limit 100)
+        Instant fiveDaysAgo = Instant.now().minus(5, ChronoUnit.DAYS);
+        jdbcTemplate.update(
+                "INSERT INTO fake_source (wafer_id, measured_value, ts, tool, recipe, product, lot_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "W-VIOLATING", 150.0, java.sql.Timestamp.from(fiveDaysAgo), "TOOL-A", "RCP-1", "PROD-X", "LOT-1");
+
+        // Run backfill
+        var task = backfillRunner.triggerBackfill(mapping.getId());
+        awaitTaskCompletion(task.getId(), 10);
+
+        // Verify measurement was backfilled
+        assertThat(measurementRepo.findAll()).hasSize(1);
+        assertThat(measurementRepo.findAll().getFirst().isBackfilled()).isTrue();
+
+        // Run evaluator - should NOT create alarm for backfilled data
+        evaluatorRunner.tick();
+        assertThat(alarmRepo.findAll()).isEmpty();
+    }
+
+    @Test
+    void backfilled_measurements_appear_in_trend_chart_query() throws Exception {
+        var param = parameterRepo.save(new ParameterEntity("CD", "nm", 100.0, null));
+        var source = createSourceSystem();
+        var mapping = createMapping(source.getId(), param.getId());
+
+        Instant fiveDaysAgo = Instant.now().minus(5, ChronoUnit.DAYS);
+        jdbcTemplate.update(
+                "INSERT INTO fake_source (wafer_id, measured_value, ts, tool, recipe, product, lot_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "W-BACKFILL", 95.0, java.sql.Timestamp.from(fiveDaysAgo), "TOOL-A", "RCP-1", "PROD-X", "LOT-1");
+
+        var task = backfillRunner.triggerBackfill(mapping.getId());
+        awaitTaskCompletion(task.getId(), 10);
+
+        // The trend chart uses findByParameterIdAndTsBetween which does NOT filter backfilled
+        var trendData = measurementRepo.findByParameterIdAndTsBetween(
+                param.getId(),
+                Instant.now().minus(30, ChronoUnit.DAYS),
+                Instant.now());
+        assertThat(trendData).hasSize(1);
+        assertThat(trendData.getFirst().getWaferId()).isEqualTo("W-BACKFILL");
     }
 
     private void awaitTaskCompletion(Long taskId, int timeoutSeconds) throws InterruptedException {
