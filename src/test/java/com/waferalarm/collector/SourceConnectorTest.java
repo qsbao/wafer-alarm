@@ -29,6 +29,8 @@ class SourceConnectorTest {
     @Autowired ConnectorRunRepository connectorRunRepo;
     @Autowired CollectorWatermarkRepository watermarkRepo;
     @Autowired BackfillTaskRepository backfillTaskRepo;
+    @Autowired StagingUnmappedRepository unmappedRepo;
+    @Autowired StagingDismissedRepository dismissedRepo;
 
     SourceConnector connector;
 
@@ -43,6 +45,8 @@ class SourceConnectorTest {
         watermarkRepo.deleteAll();
         backfillTaskRepo.deleteAll();
         sourceMappingRepo.deleteAll();
+        unmappedRepo.deleteAll();
+        dismissedRepo.deleteAll();
         sourceSystemRepo.deleteAll();
         parameterRepo.deleteAll();
 

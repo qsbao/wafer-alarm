@@ -31,6 +31,8 @@ class SourceSystemControllerTest {
     @Autowired CollectorWatermarkRepository watermarkRepo;
     @Autowired ParameterRepository parameterRepo;
     @Autowired BackfillTaskRepository backfillTaskRepo;
+    @Autowired StagingUnmappedRepository unmappedRepo;
+    @Autowired StagingDismissedRepository dismissedRepo;
 
     @BeforeEach
     void setUp() {
@@ -43,6 +45,8 @@ class SourceSystemControllerTest {
         watermarkRepo.deleteAll();
         backfillTaskRepo.deleteAll();
         sourceMappingRepo.deleteAll();
+        unmappedRepo.deleteAll();
+        dismissedRepo.deleteAll();
         sourceSystemRepo.deleteAll();
         parameterRepo.deleteAll();
     }

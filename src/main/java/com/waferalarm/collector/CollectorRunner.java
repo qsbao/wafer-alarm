@@ -1,5 +1,6 @@
 package com.waferalarm.collector;
 
+import com.waferalarm.catalog.UnmappedDataService;
 import com.waferalarm.domain.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -10,6 +11,7 @@ import org.springframework.stereotype.Component;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 
 @Component
@@ -27,6 +29,7 @@ public class CollectorRunner {
     private final ConnectorRunRepository runRepo;
     private final ExecutorService collectorExecutor;
     private final CollectorConfig collectorConfig;
+    private final UnmappedDataService unmappedDataService;
 
     public CollectorRunner(
             SourceConnector connector,
@@ -35,7 +38,8 @@ public class CollectorRunner {
             CollectorWatermarkRepository watermarkRepo,
             ConnectorRunRepository runRepo,
             @Qualifier("collectorExecutor") ExecutorService collectorExecutor,
-            CollectorConfig collectorConfig) {
+            CollectorConfig collectorConfig,
+            UnmappedDataService unmappedDataService) {
         this.connector = connector;
         this.mappingRepo = mappingRepo;
         this.measurementRepo = measurementRepo;
@@ -43,6 +47,7 @@ public class CollectorRunner {
         this.runRepo = runRepo;
         this.collectorExecutor = collectorExecutor;
         this.collectorConfig = collectorConfig;
+        this.unmappedDataService = unmappedDataService;
         if (collectorConfig.ownsAll()) {
             log.info("Collector configured to own ALL source systems");
         } else {
@@ -78,8 +83,15 @@ public class CollectorRunner {
             Instant watermarkLow = lastWatermark.minus(OVERLAP_WINDOW);
             Instant watermarkHigh = Instant.now();
 
-            List<MeasurementEntity> measurements = connector.pull(
+            PullResult pullResult = connector.pullWithUnmapped(
                     mapping, mapping.getParameterId(), watermarkLow, watermarkHigh);
+            List<MeasurementEntity> measurements = pullResult.measurements();
+
+            // Record any unmapped columns detected in the result set
+            for (Map.Entry<String, String> entry : pullResult.unmappedColumns().entrySet()) {
+                unmappedDataService.recordUnmapped(
+                        mapping.getSourceSystemId(), entry.getKey(), entry.getValue());
+            }
 
             // Filter out duplicates from overlap window re-reads
             List<MeasurementEntity> newMeasurements = measurements.stream()
