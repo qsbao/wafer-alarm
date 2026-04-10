@@ -10,6 +10,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -22,11 +23,13 @@ class ParameterLimitControllerTest {
     @Autowired MockMvc mvc;
     @Autowired ParameterRepository parameterRepo;
     @Autowired ParameterLimitRepository limitRepo;
+    @Autowired LimitAuditLogRepository auditRepo;
 
     private Long paramId;
 
     @BeforeEach
     void setUp() {
+        auditRepo.deleteAll();
         limitRepo.deleteAll();
         parameterRepo.deleteAll();
         var param = parameterRepo.save(new ParameterEntity("CD", "nm", 100.0, null));
@@ -56,5 +59,49 @@ class ParameterLimitControllerTest {
                 .andExpect(jsonPath("$[?(@.upperLimit == 140.0)].ambiguous", contains(true)))
                 // The tool=TOOL-B limit is not ambiguous
                 .andExpect(jsonPath("$[?(@.upperLimit == 130.0)].ambiguous", contains(false)));
+    }
+
+    @Test
+    void creating_limit_writes_audit_record() throws Exception {
+        mvc.perform(post("/api/parameter-limits")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"parameterId":%d,"contextMatchJson":"{\\"tool\\":\\"TOOL-A\\"}","upperLimit":120.0}
+                    """.formatted(paramId)))
+                .andExpect(status().isCreated());
+
+        var audits = auditRepo.findAll();
+        assertThat(audits).hasSize(1);
+        assertThat(audits.getFirst().getAction()).isEqualTo("CREATE");
+        assertThat(audits.getFirst().getLimitId()).isNotNull();
+    }
+
+    @Test
+    void updating_limit_writes_audit_record() throws Exception {
+        var limit = limitRepo.save(new ParameterLimitEntity(paramId, "{}", 100.0, null));
+
+        mvc.perform(put("/api/parameter-limits/" + limit.getId())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"parameterId":%d,"upperLimit":150.0}
+                    """.formatted(paramId)))
+                .andExpect(status().isOk());
+
+        var audits = auditRepo.findAll();
+        assertThat(audits).hasSize(1);
+        assertThat(audits.getFirst().getAction()).isEqualTo("UPDATE");
+    }
+
+    @Test
+    void deleting_limit_writes_audit_record() throws Exception {
+        var limit = limitRepo.save(new ParameterLimitEntity(paramId, "{}", 100.0, null));
+
+        mvc.perform(delete("/api/parameter-limits/" + limit.getId()))
+                .andExpect(status().isNoContent());
+
+        var audits = auditRepo.findAll();
+        assertThat(audits).hasSize(1);
+        assertThat(audits.getFirst().getAction()).isEqualTo("DELETE");
+        assertThat(audits.getFirst().getLimitId()).isEqualTo(limit.getId());
     }
 }

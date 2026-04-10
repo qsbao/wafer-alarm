@@ -1,5 +1,7 @@
 package com.waferalarm.web;
 
+import com.waferalarm.domain.LimitAuditLogEntity;
+import com.waferalarm.domain.LimitAuditLogRepository;
 import com.waferalarm.domain.ParameterLimitEntity;
 import com.waferalarm.domain.ParameterLimitRepository;
 import org.springframework.http.HttpStatus;
@@ -15,9 +17,11 @@ import java.util.stream.Collectors;
 public class ParameterLimitController {
 
     private final ParameterLimitRepository repo;
+    private final LimitAuditLogRepository auditRepo;
 
-    public ParameterLimitController(ParameterLimitRepository repo) {
+    public ParameterLimitController(ParameterLimitRepository repo, LimitAuditLogRepository auditRepo) {
         this.repo = repo;
+        this.auditRepo = auditRepo;
     }
 
     @GetMapping
@@ -38,6 +42,9 @@ public class ParameterLimitController {
                 req.upperLimit(),
                 req.lowerLimit());
         var saved = repo.save(entity);
+        auditRepo.save(new LimitAuditLogEntity(
+                saved.getId(), saved.getParameterId(), "CREATE",
+                saved.getContextMatchJson(), saved.getUpperLimit(), saved.getLowerLimit()));
         return ResponseEntity.status(HttpStatus.CREATED).body(LimitResponse.from(saved, false));
     }
 
@@ -50,13 +57,20 @@ public class ParameterLimitController {
                 entity.setContextMatchJson(req.contextMatchJson());
             }
             var saved = repo.save(entity);
+            auditRepo.save(new LimitAuditLogEntity(
+                    saved.getId(), saved.getParameterId(), "UPDATE",
+                    saved.getContextMatchJson(), saved.getUpperLimit(), saved.getLowerLimit()));
             return ResponseEntity.ok(LimitResponse.from(saved, false));
         }).orElse(ResponseEntity.notFound().build());
     }
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable Long id) {
-        if (!repo.existsById(id)) return ResponseEntity.notFound().build();
+        var entity = repo.findById(id).orElse(null);
+        if (entity == null) return ResponseEntity.notFound().build();
+        auditRepo.save(new LimitAuditLogEntity(
+                entity.getId(), entity.getParameterId(), "DELETE",
+                entity.getContextMatchJson(), entity.getUpperLimit(), entity.getLowerLimit()));
         repo.deleteById(id);
         return ResponseEntity.noContent().build();
     }
