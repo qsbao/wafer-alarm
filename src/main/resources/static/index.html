@@ -38,6 +38,17 @@
     .suppress-modal-content button { cursor: pointer; margin-left: 8px; }
     .suppress-modal-content .btn-primary { background: #f39c12; color: #fff; border-color: #f39c12; }
     .suppress-modal-content .btn-cancel { background: #fff; }
+    .filters { background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); padding: 16px 20px; margin-bottom: 20px; display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+    .filter-group { display: flex; flex-direction: column; gap: 4px; }
+    .filter-group label { font-size: 0.75rem; font-weight: 600; color: #666; text-transform: uppercase; letter-spacing: 0.5px; }
+    .filter-group select { padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.85rem; min-width: 130px; }
+    .tabs { display: flex; gap: 0; margin-bottom: 20px; }
+    .tab { padding: 10px 20px; border: 1px solid #ddd; background: #fff; cursor: pointer; font-size: 0.875rem; font-weight: 500; }
+    .tab:first-child { border-radius: 8px 0 0 8px; }
+    .tab:last-child { border-radius: 0 8px 8px 0; }
+    .tab.active { background: #3498db; color: #fff; border-color: #3498db; }
+    .trend-link { color: #3498db; text-decoration: none; font-size: 0.8rem; }
+    .trend-link:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
@@ -114,47 +125,70 @@
       );
     }
 
-    function AlarmTable({ alarms, onAction }) {
+    function buildTrendLink(alarm) {
+      const params = new URLSearchParams();
+      params.set('parameterIds', String(alarm.parameterId));
+      // Extract tool from contextKey (format: "tool=VALUE")
+      if (alarm.contextKey) {
+        const match = alarm.contextKey.match(/tool=([^|]*)/);
+        if (match && match[1]) params.set('tool', match[1]);
+      }
+      // Time range: from first violation to now (or last violation + 1h)
+      if (alarm.firstViolationAt) {
+        params.set('from', alarm.firstViolationAt);
+      }
+      const to = alarm.lastViolationAt
+        ? new Date(new Date(alarm.lastViolationAt).getTime() + 3600000).toISOString()
+        : new Date().toISOString();
+      params.set('to', to);
+      return '/trend.html?' + params.toString();
+    }
+
+    function AlarmTable({ alarms, onAction, showActions }) {
       if (alarms.length === 0) {
-        return <div className="empty-state">No active alarms</div>;
+        return <div className="empty-state">No alarms</div>;
       }
       return (
         <table>
           <thead>
             <tr>
               <th>Severity</th>
-              <th>Parameter ID</th>
+              <th>Parameter</th>
               <th>Context</th>
               <th>Value</th>
               <th>Threshold</th>
               <th>Occurrences</th>
               <th>Last Violation</th>
               <th>State</th>
-              <th>Actions</th>
+              <th>Trend</th>
+              {showActions && <th>Actions</th>}
             </tr>
           </thead>
           <tbody>
             {alarms.map((a, i) => (
               <tr key={a.id ?? i}>
                 <td><span className={`severity-badge severity-${a.severity}`}>{a.severity}</span></td>
-                <td>{a.parameterId}</td>
+                <td>{a.parameterName || a.parameterId}</td>
                 <td>{a.contextKey}</td>
                 <td>{a.lastValue}</td>
                 <td>{a.thresholdValue}</td>
                 <td>{a.occurrenceCount}</td>
                 <td>{a.lastViolationAt ? new Date(a.lastViolationAt).toLocaleString() : '-'}</td>
                 <td className="state-badge">{a.state}</td>
-                <td>
-                  {a.state === 'FIRING' && (
-                    <button className="action-btn ack" onClick={() => onAction('acknowledge', a.id)}>Ack</button>
-                  )}
-                  {(a.state === 'FIRING' || a.state === 'ACKNOWLEDGED') && (
-                    <button className="action-btn resolve" onClick={() => onAction('resolve', a.id)}>Resolve</button>
-                  )}
-                  {(a.state === 'FIRING' || a.state === 'ACKNOWLEDGED') && (
-                    <button className="action-btn suppress" onClick={() => onAction('suppress', a.id)}>Suppress</button>
-                  )}
-                </td>
+                <td><a className="trend-link" href={buildTrendLink(a)} target="_blank">View</a></td>
+                {showActions && (
+                  <td>
+                    {a.state === 'FIRING' && (
+                      <button className="action-btn ack" onClick={() => onAction('acknowledge', a.id)}>Ack</button>
+                    )}
+                    {(a.state === 'FIRING' || a.state === 'ACKNOWLEDGED') && (
+                      <button className="action-btn resolve" onClick={() => onAction('resolve', a.id)}>Resolve</button>
+                    )}
+                    {(a.state === 'FIRING' || a.state === 'ACKNOWLEDGED') && (
+                      <button className="action-btn suppress" onClick={() => onAction('suppress', a.id)}>Suppress</button>
+                    )}
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
@@ -164,31 +198,70 @@
 
     function App() {
       const [alarms, setAlarms] = useState([]);
+      const [resolvedAlarms, setResolvedAlarms] = useState([]);
       const [lastRefresh, setLastRefresh] = useState(null);
       const [suppressAlarmId, setSuppressAlarmId] = useState(null);
+      const [activeTab, setActiveTab] = useState('active');
+      const [parameters, setParameters] = useState([]);
+
+      // Filters
+      const [filterParam, setFilterParam] = useState('');
+      const [filterTool, setFilterTool] = useState('');
+      const [filterSeverity, setFilterSeverity] = useState('');
+      const [filterState, setFilterState] = useState('');
+
+      // Load parameters for filter dropdown
+      useEffect(() => {
+        fetch('/api/parameters')
+          .then(r => r.ok ? r.json() : [])
+          .then(setParameters)
+          .catch(() => {});
+      }, []);
 
       const fetchAlarms = useCallback(async () => {
         try {
-          const res = await fetch('/api/alarms');
+          // Build query string for active alarms
+          const params = new URLSearchParams();
+          if (filterParam) params.set('parameterId', filterParam);
+          if (filterTool) params.set('tool', filterTool);
+          if (filterSeverity) params.set('severity', filterSeverity);
+          if (filterState) params.set('state', filterState);
+          const qs = params.toString();
+
+          const res = await fetch('/api/alarms' + (qs ? '?' + qs : ''));
           if (!res.ok) throw new Error(res.statusText);
           const data = await res.json();
-          const sorted = [...data].sort((a, b) => {
-            const sev = (SEVERITY_ORDER[a.severity] ?? 99) - (SEVERITY_ORDER[b.severity] ?? 99);
-            if (sev !== 0) return sev;
-            return new Date(b.lastViolationAt || 0) - new Date(a.lastViolationAt || 0);
-          });
-          setAlarms(sorted);
+          setAlarms(data);
+
+          // Fetch resolved alarms
+          const resResolved = await fetch('/api/alarms/resolved');
+          if (resResolved.ok) {
+            setResolvedAlarms(await resResolved.json());
+          }
+
           setLastRefresh(new Date());
         } catch (e) {
           console.error('Failed to fetch alarms:', e);
         }
-      }, []);
+      }, [filterParam, filterTool, filterSeverity, filterState]);
 
       useEffect(() => {
         fetchAlarms();
         const id = setInterval(fetchAlarms, REFRESH_INTERVAL);
         return () => clearInterval(id);
       }, [fetchAlarms]);
+
+      // Extract unique tools from alarm contextKeys for filter dropdown
+      const toolOptions = React.useMemo(() => {
+        const tools = new Set();
+        [...alarms, ...resolvedAlarms].forEach(a => {
+          if (a.contextKey) {
+            const match = a.contextKey.match(/tool=([^|]*)/);
+            if (match && match[1]) tools.add(match[1]);
+          }
+        });
+        return [...tools].sort();
+      }, [alarms, resolvedAlarms]);
 
       const handleAction = async (action, alarmId) => {
         if (action === 'suppress') {
@@ -227,6 +300,8 @@
         }
       };
 
+      const displayedAlarms = activeTab === 'active' ? alarms : resolvedAlarms;
+
       return (
         <div className="container">
           <h1>
@@ -240,11 +315,64 @@
             <a href="/rules.html" style={{ fontSize: '0.875rem', marginLeft: 12, color: '#3498db', textDecoration: 'none' }}>Rules</a>
             <a href="/audit-log.html" style={{ fontSize: '0.875rem', marginLeft: 12, color: '#3498db', textDecoration: 'none' }}>Audit Log</a>
           </h1>
-          <div className="chart-card">
-            <SeverityChart alarms={alarms} />
+
+          <div className="tabs">
+            <div className={`tab ${activeTab === 'active' ? 'active' : ''}`} onClick={() => setActiveTab('active')}>
+              Active ({alarms.length})
+            </div>
+            <div className={`tab ${activeTab === 'resolved' ? 'active' : ''}`} onClick={() => setActiveTab('resolved')}>
+              Resolved 24h ({resolvedAlarms.length})
+            </div>
           </div>
+
+          {activeTab === 'active' && (
+            <div className="filters">
+              <div className="filter-group">
+                <label>Parameter</label>
+                <select value={filterParam} onChange={e => setFilterParam(e.target.value)}>
+                  <option value="">All</option>
+                  {parameters.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </div>
+              <div className="filter-group">
+                <label>Tool</label>
+                <select value={filterTool} onChange={e => setFilterTool(e.target.value)}>
+                  <option value="">All</option>
+                  {toolOptions.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+              <div className="filter-group">
+                <label>Severity</label>
+                <select value={filterSeverity} onChange={e => setFilterSeverity(e.target.value)}>
+                  <option value="">All</option>
+                  <option value="CRITICAL">Critical</option>
+                  <option value="WARNING">Warning</option>
+                  <option value="INFO">Info</option>
+                </select>
+              </div>
+              <div className="filter-group">
+                <label>State</label>
+                <select value={filterState} onChange={e => setFilterState(e.target.value)}>
+                  <option value="">All</option>
+                  <option value="FIRING">Firing</option>
+                  <option value="ACKNOWLEDGED">Acknowledged</option>
+                </select>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'active' && (
+            <div className="chart-card">
+              <SeverityChart alarms={alarms} />
+            </div>
+          )}
+
           <div className="table-card">
-            <AlarmTable alarms={alarms} onAction={handleAction} />
+            <AlarmTable
+              alarms={displayedAlarms}
+              onAction={handleAction}
+              showActions={activeTab === 'active'}
+            />
           </div>
           {suppressAlarmId != null && (
             <SuppressModal
