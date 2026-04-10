@@ -26,6 +26,7 @@ public class CollectorRunner {
     private final CollectorWatermarkRepository watermarkRepo;
     private final ConnectorRunRepository runRepo;
     private final ExecutorService collectorExecutor;
+    private final CollectorConfig collectorConfig;
 
     public CollectorRunner(
             SourceConnector connector,
@@ -33,13 +34,20 @@ public class CollectorRunner {
             MeasurementRepository measurementRepo,
             CollectorWatermarkRepository watermarkRepo,
             ConnectorRunRepository runRepo,
-            @Qualifier("collectorExecutor") ExecutorService collectorExecutor) {
+            @Qualifier("collectorExecutor") ExecutorService collectorExecutor,
+            CollectorConfig collectorConfig) {
         this.connector = connector;
         this.mappingRepo = mappingRepo;
         this.measurementRepo = measurementRepo;
         this.watermarkRepo = watermarkRepo;
         this.runRepo = runRepo;
         this.collectorExecutor = collectorExecutor;
+        this.collectorConfig = collectorConfig;
+        if (collectorConfig.ownsAll()) {
+            log.info("Collector configured to own ALL source systems");
+        } else {
+            log.info("Collector configured to own source systems: {}", collectorConfig.getOwnedSourceSystemIds());
+        }
     }
 
     @Scheduled(fixedDelayString = "${app.collector.poll-interval-seconds:60}000")
@@ -48,7 +56,9 @@ public class CollectorRunner {
     }
 
     public void collectAll() {
-        List<SourceMappingEntity> mappings = mappingRepo.findByEnabledTrue();
+        List<SourceMappingEntity> mappings = mappingRepo.findByEnabledTrue().stream()
+                .filter(m -> collectorConfig.owns(m.getSourceSystemId()))
+                .toList();
         for (SourceMappingEntity mapping : mappings) {
             collectMapping(mapping);
         }
