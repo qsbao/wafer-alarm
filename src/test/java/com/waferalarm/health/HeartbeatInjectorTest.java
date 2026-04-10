@@ -20,10 +20,23 @@ class HeartbeatInjectorTest {
     @Autowired MeasurementRepository measurementRepo;
     @Autowired RuleRepository ruleRepo;
 
+    @Autowired AlarmRepository alarmRepo;
+    @Autowired RuleStateRepository ruleStateRepo;
+    @Autowired RuleVersionRepository ruleVersionRepo;
+    @Autowired ParameterLimitRepository parameterLimitRepo;
+    @Autowired ConnectorRunRepository connectorRunRepo;
+    @Autowired SourceMappingRepository sourceMappingRepo;
+
     @BeforeEach
     void clean() {
+        alarmRepo.deleteAll();
+        ruleStateRepo.deleteAll();
+        connectorRunRepo.deleteAll();
         measurementRepo.deleteAll();
+        parameterLimitRepo.deleteAll();
+        ruleVersionRepo.deleteAll();
         ruleRepo.deleteAll();
+        sourceMappingRepo.deleteAll();
         parameterRepo.deleteAll();
     }
 

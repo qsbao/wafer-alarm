@@ -4,6 +4,7 @@ import com.waferalarm.domain.*;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -19,16 +20,25 @@ public class HeartbeatInjector {
     private final ParameterRepository parameterRepo;
     private final MeasurementRepository measurementRepo;
     private final RuleRepository ruleRepo;
+    private final boolean autoSetup;
 
     public HeartbeatInjector(ParameterRepository parameterRepo,
                              MeasurementRepository measurementRepo,
-                             RuleRepository ruleRepo) {
+                             RuleRepository ruleRepo,
+                             @Value("${app.heartbeat.auto-setup:true}") boolean autoSetup) {
         this.parameterRepo = parameterRepo;
         this.measurementRepo = measurementRepo;
         this.ruleRepo = ruleRepo;
+        this.autoSetup = autoSetup;
     }
 
     @PostConstruct
+    public void init() {
+        if (autoSetup) {
+            ensureSyntheticSetup();
+        }
+    }
+
     public void ensureSyntheticSetup() {
         ParameterEntity param = parameterRepo.findByName(HEARTBEAT_PARAMETER_NAME)
                 .orElseGet(() -> {

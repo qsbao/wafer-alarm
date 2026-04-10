@@ -25,11 +25,24 @@ class HealthServiceTest {
     @Autowired EvalRunRepository evalRunRepo;
     @Autowired EvalWatermarkRepository evalWatermarkRepo;
 
+    @Autowired AlarmRepository alarmRepo;
+    @Autowired RuleStateRepository ruleStateRepo;
+    @Autowired RuleVersionRepository ruleVersionRepo;
+    @Autowired ParameterLimitRepository parameterLimitRepo;
+    @Autowired RuleRepository ruleRepo;
+    @Autowired MeasurementRepository measurementRepo;
+
     @BeforeEach
     void clean() {
         connectorRunRepo.deleteAll();
         evalRunRepo.deleteAll();
         evalWatermarkRepo.deleteAll();
+        alarmRepo.deleteAll();
+        ruleStateRepo.deleteAll();
+        measurementRepo.deleteAll();
+        parameterLimitRepo.deleteAll();
+        ruleVersionRepo.deleteAll();
+        ruleRepo.deleteAll();
         mappingRepo.deleteAll();
         sourceSystemRepo.deleteAll();
         parameterRepo.deleteAll();

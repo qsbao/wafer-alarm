@@ -23,6 +23,8 @@ management:
         enabled: true
 
 app:
+  heartbeat:
+    auto-setup: false
   collector:
     pool-size: 1
     poll-interval-seconds: 5
