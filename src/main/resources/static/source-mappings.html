@@ -27,10 +27,17 @@
     .btn-danger:hover { background: #fdecea; }
     .btn-success { border-color: #27ae60; color: #27ae60; }
     .btn-success:hover { background: #e8f8f0; }
+    .btn-info { border-color: #8e44ad; color: #8e44ad; }
+    .btn-info:hover { background: #f3e5f5; }
     .disabled-row td { color: #aaa; }
     .status-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.7rem; font-weight: 600; }
     .status-enabled { background: #e8f5e9; color: #2e7d32; }
     .status-disabled { background: #fbe9e7; color: #c62828; }
+    .backfill-pending { background: #fff3e0; color: #e65100; }
+    .backfill-running { background: #e3f2fd; color: #1565c0; }
+    .backfill-completed { background: #e8f5e9; color: #2e7d32; }
+    .backfill-failed { background: #fbe9e7; color: #c62828; }
+    .backfill-none { background: #f5f5f5; color: #999; }
     .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 100; }
     .modal { background: #fff; padding: 24px; border-radius: 8px; min-width: 600px; max-width: 700px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); max-height: 90vh; overflow-y: auto; }
     .modal h2 { font-size: 1.1rem; margin-bottom: 16px; }
@@ -44,6 +51,9 @@
     .error-msg { color: #e74c3c; font-size: 0.8rem; margin-top: 4px; }
     .empty-state { text-align: center; padding: 48px 20px; color: #888; font-size: 1rem; }
     .hint { font-size: 0.7rem; color: #999; margin-top: 2px; }
+    .checkbox-group { display: flex; align-items: center; gap: 8px; }
+    .checkbox-group input[type="checkbox"] { width: auto; }
+    .progress-text { font-size: 0.75rem; color: #666; }
   </style>
 </head>
 <body>
@@ -55,12 +65,14 @@
       const [form, setForm] = useState(initial || {
         sourceSystemId: '', parameterId: '', queryTemplate: '',
         valueColumn: '', watermarkColumn: '', contextColumnMapping: '',
-        pollIntervalSeconds: '300', rowCap: '10000', queryTimeoutSeconds: '30'
+        pollIntervalSeconds: '300', rowCap: '10000', queryTimeoutSeconds: '30',
+        backfillEnabled: false, backfillWindowDays: '30'
       });
       const [error, setError] = useState('');
 
       const handleChange = (field) => (e) => {
-        setForm({ ...form, [field]: e.target.value });
+        const value = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
+        setForm({ ...form, [field]: value });
         setError('');
       };
 
@@ -80,6 +92,8 @@
           pollIntervalSeconds: parseInt(form.pollIntervalSeconds) || 300,
           rowCap: parseInt(form.rowCap) || 10000,
           queryTimeoutSeconds: parseInt(form.queryTimeoutSeconds) || 30,
+          backfillEnabled: !!form.backfillEnabled,
+          backfillWindowDays: parseInt(form.backfillWindowDays) || 30,
         };
         try {
           await onSave(payload);
@@ -146,6 +160,24 @@
                 <div className="hint">Default: 30</div>
               </div>
             </div>
+            <div className="form-row">
+              <div className="form-group">
+                <div className="checkbox-group">
+                  <input type="checkbox" id="backfillEnabled" checked={form.backfillEnabled}
+                    onChange={handleChange('backfillEnabled')} />
+                  <label htmlFor="backfillEnabled" style={{ display: 'inline', fontWeight: 600, fontSize: '0.8rem', color: '#666' }}>
+                    Enable Backfill on Create
+                  </label>
+                </div>
+                <div className="hint">Pull historical data when this mapping is first created</div>
+              </div>
+              <div className="form-group">
+                <label>Backfill Window (days)</label>
+                <input type="number" value={form.backfillWindowDays} onChange={handleChange('backfillWindowDays')}
+                  disabled={!form.backfillEnabled} />
+                <div className="hint">Default: 30</div>
+              </div>
+            </div>
             {error && <div className="error-msg">{error}</div>}
             <div className="form-actions">
               <button className="btn" onClick={onCancel}>Cancel</button>
@@ -156,29 +188,48 @@
       );
     }
 
+    function BackfillStatus({ task }) {
+      if (!task) return <span className="status-badge backfill-none">No backfill</span>;
+      const statusClass = `backfill-${task.status.toLowerCase()}`;
+      return (
+        <div>
+          <span className={`status-badge ${statusClass}`}>{task.status}</span>
+          <div className="progress-text">
+            {task.rowsProcessed} rows processed
+          </div>
+        </div>
+      );
+    }
+
     function App() {
       const [mappings, setMappings] = useState([]);
       const [sourceSystems, setSourceSystems] = useState([]);
       const [parameters, setParameters] = useState([]);
+      const [backfillTasks, setBackfillTasks] = useState({});
       const [showForm, setShowForm] = useState(false);
       const [editMapping, setEditMapping] = useState(null);
 
       const fetchAll = useCallback(async () => {
         try {
-          const [mRes, ssRes, pRes] = await Promise.all([
+          const [mRes, ssRes, pRes, btRes] = await Promise.all([
             fetch('/api/source-mappings'),
             fetch('/api/source-systems'),
             fetch('/api/parameters'),
+            fetch('/api/backfill-tasks'),
           ]);
           setMappings(await mRes.json());
           setSourceSystems(await ssRes.json());
           setParameters(await pRes.json());
+          const tasks = await btRes.json();
+          const taskMap = {};
+          tasks.forEach(t => { taskMap[t.sourceMappingId] = t; });
+          setBackfillTasks(taskMap);
         } catch (e) {
           console.error('Failed to fetch:', e);
         }
       }, []);
 
-      useEffect(() => { fetchAll(); }, [fetchAll]);
+      useEffect(() => { fetchAll(); const id = setInterval(fetchAll, 5000); return () => clearInterval(id); }, [fetchAll]);
 
       const ssMap = Object.fromEntries(sourceSystems.map(s => [s.id, s]));
       const paramMap = Object.fromEntries(parameters.map(p => [p.id, p]));
@@ -209,6 +260,11 @@
         fetchAll();
       };
 
+      const handleBackfill = async (id) => {
+        await fetch(`/api/source-mappings/${id}/backfill`, { method: 'POST' });
+        fetchAll();
+      };
+
       const handleEdit = (m) => {
         setEditMapping({
           ...m,
@@ -218,6 +274,8 @@
           rowCap: String(m.rowCap),
           queryTimeoutSeconds: String(m.queryTimeoutSeconds),
           contextColumnMapping: m.contextColumnMapping || '',
+          backfillEnabled: m.backfillEnabled || false,
+          backfillWindowDays: String(m.backfillWindowDays || 30),
         });
       };
 
@@ -244,7 +302,7 @@
                   <tr>
                     <th>ID</th><th>Source System</th><th>Parameter</th><th>Value Col</th>
                     <th>Watermark Col</th><th>Poll (s)</th><th>Row Cap</th><th>Timeout (s)</th>
-                    <th>Status</th><th>Actions</th>
+                    <th>Status</th><th>Backfill</th><th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -263,12 +321,15 @@
                           {m.enabled ? 'Enabled' : 'Disabled'}
                         </span>
                       </td>
+                      <td><BackfillStatus task={backfillTasks[m.id]} /></td>
                       <td>
                         <button className="btn" onClick={() => handleEdit(m)}>Edit</button>
                         <button className={`btn ${m.enabled ? 'btn-danger' : 'btn-success'}`}
                                 onClick={() => handleToggle(m.id, m.enabled)}>
                           {m.enabled ? 'Disable' : 'Enable'}
                         </button>
+                        <button className="btn btn-info" onClick={() => handleBackfill(m.id)}
+                                title="Trigger backfill">Backfill</button>
                       </td>
                     </tr>
                   ))}

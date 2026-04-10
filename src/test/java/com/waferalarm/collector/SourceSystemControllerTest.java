@@ -30,6 +30,7 @@ class SourceSystemControllerTest {
     @Autowired ParameterLimitRepository parameterLimitRepo;
     @Autowired CollectorWatermarkRepository watermarkRepo;
     @Autowired ParameterRepository parameterRepo;
+    @Autowired BackfillTaskRepository backfillTaskRepo;
 
     @BeforeEach
     void setUp() {
@@ -40,6 +41,7 @@ class SourceSystemControllerTest {
         ruleVersionRepo.deleteAll();
         ruleRepo.deleteAll();
         watermarkRepo.deleteAll();
+        backfillTaskRepo.deleteAll();
         sourceMappingRepo.deleteAll();
         sourceSystemRepo.deleteAll();
         parameterRepo.deleteAll();

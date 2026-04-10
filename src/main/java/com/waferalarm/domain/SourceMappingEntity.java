@@ -39,6 +39,12 @@ public class SourceMappingEntity {
     @Column(nullable = false)
     private boolean enabled = true;
 
+    @Column(name = "backfill_enabled", nullable = false)
+    private boolean backfillEnabled = false;
+
+    @Column(name = "backfill_window_days", nullable = false)
+    private int backfillWindowDays = 30;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -74,6 +80,8 @@ public class SourceMappingEntity {
     public int getRowCap() { return rowCap; }
     public int getQueryTimeoutSeconds() { return queryTimeoutSeconds; }
     public boolean isEnabled() { return enabled; }
+    public boolean isBackfillEnabled() { return backfillEnabled; }
+    public int getBackfillWindowDays() { return backfillWindowDays; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
 
@@ -87,6 +95,8 @@ public class SourceMappingEntity {
     public void setRowCap(int rowCap) { this.rowCap = rowCap; }
     public void setQueryTimeoutSeconds(int queryTimeoutSeconds) { this.queryTimeoutSeconds = queryTimeoutSeconds; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
+    public void setBackfillEnabled(boolean backfillEnabled) { this.backfillEnabled = backfillEnabled; }
+    public void setBackfillWindowDays(int backfillWindowDays) { this.backfillWindowDays = backfillWindowDays; }
 
     @PreUpdate
     void onUpdate() { this.updatedAt = Instant.now(); }
