@@ -110,6 +110,66 @@ class BackfillRunnerIntegrationTest {
                 .containsExactlyInAnyOrder("W-HIST-001", "W-HIST-002");
     }
 
+    @Test
+    void triggerBackfill_uses_custom_window_days() throws Exception {
+        var param = parameterRepo.save(new ParameterEntity("CD", "nm", 100.0, null));
+        var source = createSourceSystem();
+        var mapping = createMapping(source.getId(), param.getId());
+        // Override to 7 days
+        mapping.setBackfillWindowDays(7);
+        sourceMappingRepo.save(mapping);
+
+        // Insert data from 10 days ago (outside 7-day window)
+        Instant tenDaysAgo = Instant.now().minus(10, ChronoUnit.DAYS);
+        jdbcTemplate.update(
+                "INSERT INTO fake_source (wafer_id, measured_value, ts, tool, recipe, product, lot_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "W-OLD", 90.0, java.sql.Timestamp.from(tenDaysAgo), "TOOL-A", "RCP-1", "PROD-X", "LOT-1");
+
+        // Insert data from 3 days ago (inside 7-day window)
+        Instant threeDaysAgo = Instant.now().minus(3, ChronoUnit.DAYS);
+        jdbcTemplate.update(
+                "INSERT INTO fake_source (wafer_id, measured_value, ts, tool, recipe, product, lot_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "W-RECENT", 95.0, java.sql.Timestamp.from(threeDaysAgo), "TOOL-A", "RCP-1", "PROD-X", "LOT-1");
+
+        var task = backfillRunner.triggerBackfill(mapping.getId());
+        awaitTaskCompletion(task.getId(), 10);
+
+        var completedTask = backfillTaskRepo.findById(task.getId()).orElseThrow();
+        assertThat(completedTask.getStatus()).isEqualTo(BackfillTaskEntity.Status.COMPLETED);
+        // Only the 3-day-old row should be pulled (10-day-old is outside window)
+        assertThat(completedTask.getRowsProcessed()).isEqualTo(1);
+        assertThat(measurementRepo.findAll()).hasSize(1);
+        assertThat(measurementRepo.findAll().getFirst().getWaferId()).isEqualTo("W-RECENT");
+    }
+
+    @Test
+    void triggerBackfill_default_window_is_30_days() throws Exception {
+        var param = parameterRepo.save(new ParameterEntity("CD", "nm", 100.0, null));
+        var source = createSourceSystem();
+        // Create mapping without overriding backfillWindowDays
+        var mapping = new SourceMappingEntity(
+                source.getId(), param.getId(),
+                "SELECT wafer_id, measured_value, ts, tool, recipe, product, lot_id FROM fake_source WHERE ts > :watermark_low AND ts <= :watermark_high ORDER BY ts",
+                "measured_value", "ts",
+                "{\"tool\":\"tool\",\"recipe\":\"recipe\",\"product\":\"product\",\"lot_id\":\"lot_id\",\"wafer_id\":\"wafer_id\"}",
+                300, 10000, 30);
+        mapping.setBackfillEnabled(true);
+        mapping = sourceMappingRepo.save(mapping);
+
+        assertThat(mapping.getBackfillWindowDays()).isEqualTo(30);
+
+        // Insert data from 20 days ago (inside default 30-day window)
+        Instant twentyDaysAgo = Instant.now().minus(20, ChronoUnit.DAYS);
+        jdbcTemplate.update(
+                "INSERT INTO fake_source (wafer_id, measured_value, ts, tool, recipe, product, lot_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "W-20D", 95.0, java.sql.Timestamp.from(twentyDaysAgo), "TOOL-A", "RCP-1", "PROD-X", "LOT-1");
+
+        var task = backfillRunner.triggerBackfill(mapping.getId());
+        awaitTaskCompletion(task.getId(), 10);
+
+        assertThat(backfillTaskRepo.findById(task.getId()).orElseThrow().getRowsProcessed()).isEqualTo(1);
+    }
+
     private void awaitTaskCompletion(Long taskId, int timeoutSeconds) throws InterruptedException {
         long deadline = System.currentTimeMillis() + timeoutSeconds * 1000L;
         while (System.currentTimeMillis() < deadline) {
