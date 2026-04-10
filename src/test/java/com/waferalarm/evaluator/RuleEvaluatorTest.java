@@ -4,6 +4,7 @@ import com.waferalarm.domain.*;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -177,6 +178,29 @@ class RuleEvaluatorTest {
 
         assertThat(events).hasSize(1);
         assertThat(events.getFirst().ruleVersionId()).isEqualTo(42L);
+    }
+
+    // --- Rate-of-change rules ---
+
+    private static RuleData rocRule(long ruleId, long paramId, Double absDelta, Double pctDelta, Double minBaseline) {
+        return new RuleData(ruleId, paramId, RuleType.RATE_OF_CHANGE, Severity.WARNING, true, null,
+                absDelta, pctDelta, minBaseline);
+    }
+
+    @Test
+    void roc_first_measurement_does_not_fire() {
+        var rule = rocRule(1L, 10L, 5.0, null, null);
+        var m = measurement(10L, "W001", 50.0, "A");
+
+        EvaluationResult result = evaluator.evaluateWithState(
+                List.of(rule), List.of(m), List.of(), Map.of());
+
+        assertThat(result.events()).isEmpty();
+        // But state should be recorded
+        assertThat(result.updatedState()).hasSize(1);
+        RuleStateData state = result.updatedState().values().iterator().next();
+        assertThat(state.lastValue()).isEqualTo(50.0);
+        assertThat(state.lastWaferId()).isEqualTo("W001");
     }
 
     // --- LimitResolver integration: specific context overrides global ---
