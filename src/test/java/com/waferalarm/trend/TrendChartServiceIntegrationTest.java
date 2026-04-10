@@ -32,6 +32,7 @@ class TrendChartServiceIntegrationTest {
         alarmRepo.deleteAll();
         measurementRepo.deleteAll();
         ruleRepo.deleteAll();
+        if (limitRepo != null) limitRepo.deleteAll();
         parameterRepo.deleteAll();
     }
 
@@ -127,6 +128,54 @@ class TrendChartServiceIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.points", hasSize(1)))
                 .andExpect(jsonPath("$.points[0].value", is(10.0)));
+    }
+
+    @Autowired ParameterLimitRepository limitRepo;
+
+    @Test
+    void returns_control_limits_from_limit_resolver() throws Exception {
+        var param = parameterRepo.save(new ParameterEntity("CD", "nm", 100.0, 0.0));
+        var t = Instant.parse("2024-01-01T00:00:00Z");
+        measurementRepo.save(new MeasurementEntity(param.getId(), "W1", 50.0, t, "T1", "R1", "P1", "L1"));
+
+        // Global fallback limit
+        limitRepo.save(new ParameterLimitEntity(param.getId(), "{}", 95.0, 5.0));
+        // Context-specific limit for tool=T1
+        limitRepo.save(new ParameterLimitEntity(param.getId(), "{\"tool\":\"T1\"}", 90.0, 10.0));
+
+        // Without filter → global fallback (empty context match)
+        mvc.perform(get("/api/trend-chart")
+                        .param("parameterId", param.getId().toString())
+                        .param("from", "2024-01-01T00:00:00Z")
+                        .param("to", "2024-01-02T00:00:00Z"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.upperLimit", is(95.0)))
+                .andExpect(jsonPath("$.lowerLimit", is(5.0)));
+
+        // With tool filter → specific limit resolved
+        mvc.perform(get("/api/trend-chart")
+                        .param("parameterId", param.getId().toString())
+                        .param("from", "2024-01-01T00:00:00Z")
+                        .param("to", "2024-01-02T00:00:00Z")
+                        .param("tool", "T1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.upperLimit", is(90.0)))
+                .andExpect(jsonPath("$.lowerLimit", is(10.0)));
+    }
+
+    @Test
+    void no_limits_returns_nulls() throws Exception {
+        var param = parameterRepo.save(new ParameterEntity("CD", "nm", null, null));
+        var t = Instant.parse("2024-01-01T00:00:00Z");
+        measurementRepo.save(new MeasurementEntity(param.getId(), "W1", 50.0, t, "T1", "R1", "P1", "L1"));
+
+        mvc.perform(get("/api/trend-chart")
+                        .param("parameterId", param.getId().toString())
+                        .param("from", "2024-01-01T00:00:00Z")
+                        .param("to", "2024-01-02T00:00:00Z"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.upperLimit").doesNotExist())
+                .andExpect(jsonPath("$.lowerLimit").doesNotExist());
     }
 
     @Test

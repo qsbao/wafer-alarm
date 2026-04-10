@@ -1,24 +1,36 @@
 package com.waferalarm.trend;
 
+import com.waferalarm.domain.LimitData;
 import com.waferalarm.domain.MeasurementEntity;
 import com.waferalarm.domain.MeasurementRepository;
+import com.waferalarm.domain.ParameterLimitRepository;
+import com.waferalarm.evaluator.LimitResolver;
+import com.waferalarm.evaluator.ParameterLimitData;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class TrendChartService {
 
     private final MeasurementRepository measurementRepo;
+    private final ParameterLimitRepository limitRepo;
+    private final LimitResolver limitResolver;
     private final TrendChartDownsampler downsampler;
     private final int downsampleThreshold;
 
     public TrendChartService(MeasurementRepository measurementRepo,
+                             ParameterLimitRepository limitRepo,
+                             LimitResolver limitResolver,
                              TrendChartDownsampler downsampler,
                              @Value("${app.trend.downsample-threshold:500}") int downsampleThreshold) {
         this.measurementRepo = measurementRepo;
+        this.limitRepo = limitRepo;
+        this.limitResolver = limitResolver;
         this.downsampler = downsampler;
         this.downsampleThreshold = downsampleThreshold;
     }
@@ -37,11 +49,36 @@ public class TrendChartService {
 
         if (points.size() > downsampleThreshold) {
             int bucketCount = downsampleThreshold / 2;
-            List<TrendPoint> downsampled = downsampler.downsample(points, bucketCount);
-            return new TrendChartResponse(downsampled, true);
+            points = downsampler.downsample(points, bucketCount);
+            return buildResponse(points, true, parameterId, tool, recipe, product, lot);
         }
 
-        return new TrendChartResponse(points, false);
+        return buildResponse(points, false, parameterId, tool, recipe, product, lot);
+    }
+
+    private TrendChartResponse buildResponse(List<TrendPoint> points, boolean downsampled,
+                                              Long parameterId, String tool, String recipe,
+                                              String product, String lot) {
+        // Resolve limits for the active filter context
+        Map<String, String> filterContext = buildFilterContext(tool, recipe, product, lot);
+        List<ParameterLimitData> allLimits = limitRepo.findByParameterId(parameterId).stream()
+                .map(e -> e.toData())
+                .toList();
+
+        var resolved = limitResolver.resolve(parameterId, filterContext, allLimits);
+        Double upper = resolved.map(LimitData::upperLimit).orElse(null);
+        Double lower = resolved.map(LimitData::lowerLimit).orElse(null);
+
+        return new TrendChartResponse(points, downsampled, upper, lower, null);
+    }
+
+    private Map<String, String> buildFilterContext(String tool, String recipe, String product, String lot) {
+        Map<String, String> ctx = new LinkedHashMap<>();
+        if (tool != null) ctx.put("tool", tool);
+        if (recipe != null) ctx.put("recipe", recipe);
+        if (product != null) ctx.put("product", product);
+        if (lot != null) ctx.put("lot_id", lot);
+        return ctx;
     }
 
     private TrendPoint toTrendPoint(MeasurementEntity m) {
