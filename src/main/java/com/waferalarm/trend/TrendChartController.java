@@ -1,6 +1,5 @@
 package com.waferalarm.trend;
 
-import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -22,7 +21,11 @@ public class TrendChartController {
     public TrendChartResponse getTrendChart(
             @RequestParam Long parameterId,
             @RequestParam Instant from,
-            @RequestParam Instant to) {
-        return trendChartService.query(parameterId, from, to);
+            @RequestParam Instant to,
+            @RequestParam(required = false) String tool,
+            @RequestParam(required = false) String recipe,
+            @RequestParam(required = false) String product,
+            @RequestParam(required = false) String lot) {
+        return trendChartService.query(parameterId, from, to, tool, recipe, product, lot);
     }
 }

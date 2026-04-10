@@ -1,5 +1,6 @@
 package com.waferalarm.trend;
 
+import com.waferalarm.domain.MeasurementEntity;
 import com.waferalarm.domain.MeasurementRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -23,10 +24,15 @@ public class TrendChartService {
     }
 
     public TrendChartResponse query(Long parameterId, Instant from, Instant to) {
-        var measurements = measurementRepo.findByParameterIdAndTsBetween(parameterId, from, to);
+        return query(parameterId, from, to, null, null, null, null);
+    }
+
+    public TrendChartResponse query(Long parameterId, Instant from, Instant to,
+                                     String tool, String recipe, String product, String lot) {
+        var measurements = measurementRepo.findFiltered(parameterId, from, to, tool, recipe, product, lot);
 
         List<TrendPoint> points = measurements.stream()
-                .map(m -> new TrendPoint(m.getTs(), m.getValue()))
+                .map(this::toTrendPoint)
                 .toList();
 
         if (points.size() > downsampleThreshold) {
@@ -36,5 +42,10 @@ public class TrendChartService {
         }
 
         return new TrendChartResponse(points, false);
+    }
+
+    private TrendPoint toTrendPoint(MeasurementEntity m) {
+        return new TrendPoint(m.getTs(), m.getValue(), m.getTool(), m.getRecipe(),
+                m.getProduct(), m.getLotId(), m.getWaferId());
     }
 }

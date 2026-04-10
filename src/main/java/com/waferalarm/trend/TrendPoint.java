@@ -2,4 +2,12 @@ package com.waferalarm.trend;
 
 import java.time.Instant;
 
-public record TrendPoint(Instant ts, double value) {}
+public record TrendPoint(
+        Instant ts,
+        double value,
+        String tool,
+        String recipe,
+        String product,
+        String lotId,
+        String waferId
+) {}
