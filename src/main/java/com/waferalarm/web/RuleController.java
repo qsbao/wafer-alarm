@@ -27,11 +27,15 @@ public class RuleController {
     @PostMapping
     public ResponseEntity<RuleDto> create(@RequestBody RuleRequest req) {
         var rule = new RuleEntity(req.parameterId(), req.ruleType(), req.severity());
+        rule.setAbsoluteDelta(req.absoluteDelta());
+        rule.setPercentageDelta(req.percentageDelta());
+        rule.setMinimumBaseline(req.minimumBaseline());
         rule = ruleRepo.save(rule);
 
         var version = new RuleVersionEntity(
                 rule.getId(), req.ruleType(), req.severity(), true,
-                req.author() != null ? req.author() : "system");
+                req.author() != null ? req.author() : "system",
+                req.absoluteDelta(), req.percentageDelta(), req.minimumBaseline());
         version = versionRepo.save(version);
 
         rule.setCurrentVersionId(version.getId());
@@ -45,10 +49,14 @@ public class RuleController {
         return ruleRepo.findById(id).map(rule -> {
             rule.setSeverity(req.severity());
             rule.setRuleType(req.ruleType());
+            rule.setAbsoluteDelta(req.absoluteDelta());
+            rule.setPercentageDelta(req.percentageDelta());
+            rule.setMinimumBaseline(req.minimumBaseline());
 
             var version = new RuleVersionEntity(
                     rule.getId(), req.ruleType(), req.severity(), rule.isEnabled(),
-                    req.author() != null ? req.author() : "system");
+                    req.author() != null ? req.author() : "system",
+                    req.absoluteDelta(), req.percentageDelta(), req.minimumBaseline());
             version = versionRepo.save(version);
 
             rule.setCurrentVersionId(version.getId());
@@ -95,13 +103,20 @@ public class RuleController {
         return ResponseEntity.ok(versions);
     }
 
-    public record RuleRequest(Long parameterId, RuleType ruleType, Severity severity, String author) {}
+    public record RuleRequest(Long parameterId, RuleType ruleType, Severity severity, String author,
+                              Double absoluteDelta, Double percentageDelta, Double minimumBaseline) {
+        public RuleRequest(Long parameterId, RuleType ruleType, Severity severity, String author) {
+            this(parameterId, ruleType, severity, author, null, null, null);
+        }
+    }
 
     public record RuleDto(Long id, Long parameterId, String ruleType, String severity,
-                          boolean enabled, Long currentVersionId) {
+                          boolean enabled, Long currentVersionId,
+                          Double absoluteDelta, Double percentageDelta, Double minimumBaseline) {
         public static RuleDto from(RuleEntity e) {
             return new RuleDto(e.getId(), e.getParameterId(), e.getRuleType().name(),
-                    e.getSeverity().name(), e.isEnabled(), e.getCurrentVersionId());
+                    e.getSeverity().name(), e.isEnabled(), e.getCurrentVersionId(),
+                    e.getAbsoluteDelta(), e.getPercentageDelta(), e.getMinimumBaseline());
         }
     }
 

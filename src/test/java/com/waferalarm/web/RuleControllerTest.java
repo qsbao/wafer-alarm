@@ -24,10 +24,12 @@ class RuleControllerTest {
     @Autowired AlarmRepository alarmRepo;
     @Autowired ParameterLimitRepository limitRepo;
     @Autowired MeasurementRepository measurementRepo;
+    @Autowired RuleStateRepository ruleStateRepo;
 
     @BeforeEach
     void clean() {
         alarmRepo.deleteAll();
+        ruleStateRepo.deleteAll();
         measurementRepo.deleteAll();
         limitRepo.deleteAll();
         versionRepo.deleteAll();
@@ -131,5 +133,33 @@ class RuleControllerTest {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).hasSize(2);
+    }
+
+    @Test
+    void create_rate_of_change_rule() {
+        var param = parameterRepo.save(new ParameterEntity("CD", "nm", null, null));
+        var body = new RuleController.RuleRequest(param.getId(), RuleType.RATE_OF_CHANGE,
+                Severity.WARNING, "engineer1", 5.0, 10.0, 2.0);
+
+        var response = rest.postForEntity("/api/rules", body, RuleController.RuleDto.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        var dto = response.getBody();
+        assertThat(dto).isNotNull();
+        assertThat(dto.ruleType()).isEqualTo("RATE_OF_CHANGE");
+        assertThat(dto.absoluteDelta()).isEqualTo(5.0);
+        assertThat(dto.percentageDelta()).isEqualTo(10.0);
+        assertThat(dto.minimumBaseline()).isEqualTo(2.0);
+
+        // Verify DB
+        var rule = ruleRepo.findById(dto.id()).get();
+        assertThat(rule.getAbsoluteDelta()).isEqualTo(5.0);
+        assertThat(rule.getPercentageDelta()).isEqualTo(10.0);
+        assertThat(rule.getMinimumBaseline()).isEqualTo(2.0);
+
+        // Version was created with ROC fields
+        var versions = versionRepo.findByRuleIdOrderByCreatedAtDesc(dto.id());
+        assertThat(versions).hasSize(1);
+        assertThat(versions.getFirst().getAbsoluteDelta()).isEqualTo(5.0);
     }
 }
