@@ -179,6 +179,36 @@ class TrendChartServiceIntegrationTest {
     }
 
     @Test
+    void returns_alarm_bands_intersecting_view() throws Exception {
+        var param = parameterRepo.save(new ParameterEntity("CD", "nm", 100.0, 0.0));
+        var rule = ruleRepo.save(new RuleEntity(param.getId(), RuleType.UPPER_THRESHOLD, Severity.WARNING));
+        var t = Instant.parse("2024-01-01T12:00:00Z");
+        measurementRepo.save(new MeasurementEntity(param.getId(), "W1", 50.0, t, "T1", "R1", "P1", "L1"));
+
+        // Alarm fully inside view window
+        var alarm1 = AlarmEntity.fromSnapshot(new AlarmSnapshot(
+                null, rule.getId(), param.getId(), "tool=T1", AlarmState.FIRING, Severity.WARNING,
+                3, Instant.parse("2024-01-01T10:00:00Z"), Instant.parse("2024-01-01T14:00:00Z"),
+                105.0, 100.0, 0, null, null));
+        alarmRepo.save(alarm1);
+
+        // Alarm outside view window (should NOT appear)
+        var alarm2 = AlarmEntity.fromSnapshot(new AlarmSnapshot(
+                null, rule.getId(), param.getId(), "tool=T2", AlarmState.RESOLVED, Severity.CRITICAL,
+                1, Instant.parse("2023-12-01T00:00:00Z"), Instant.parse("2023-12-01T01:00:00Z"),
+                105.0, 100.0, 0, null, null));
+        alarmRepo.save(alarm2);
+
+        mvc.perform(get("/api/trend-chart")
+                        .param("parameterId", param.getId().toString())
+                        .param("from", "2024-01-01T00:00:00Z")
+                        .param("to", "2024-01-02T00:00:00Z"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.alarmBands", hasSize(1)))
+                .andExpect(jsonPath("$.alarmBands[0].severity", is("WARNING")));
+    }
+
+    @Test
     void empty_measurements_returns_empty_list() throws Exception {
         var param = parameterRepo.save(new ParameterEntity("CD", "nm", 100.0, 0.0));
 
