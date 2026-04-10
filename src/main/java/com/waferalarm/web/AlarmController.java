@@ -2,10 +2,7 @@ package com.waferalarm.web;
 
 import com.waferalarm.alarm.AlarmLifecycle;
 import com.waferalarm.audit.AuditLogger;
-import com.waferalarm.domain.AlarmEntity;
-import com.waferalarm.domain.AlarmRepository;
-import com.waferalarm.domain.AlarmSnapshot;
-import com.waferalarm.domain.AlarmState;
+import com.waferalarm.domain.*;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
@@ -21,20 +18,48 @@ public class AlarmController {
     private final AlarmRepository alarmRepo;
     private final AlarmLifecycle alarmLifecycle;
     private final AuditLogger auditLogger;
+    private final ParameterRepository parameterRepo;
 
-    public AlarmController(AlarmRepository alarmRepo, AlarmLifecycle alarmLifecycle, AuditLogger auditLogger) {
+    public AlarmController(AlarmRepository alarmRepo, AlarmLifecycle alarmLifecycle,
+                           AuditLogger auditLogger, ParameterRepository parameterRepo) {
         this.alarmRepo = alarmRepo;
         this.alarmLifecycle = alarmLifecycle;
         this.auditLogger = auditLogger;
+        this.parameterRepo = parameterRepo;
     }
 
     @GetMapping
-    public List<AlarmDto> listActiveAlarms() {
-        List<AlarmState> activeStates = List.of(AlarmState.FIRING, AlarmState.ACKNOWLEDGED);
-        return alarmRepo.findByStateInOrderBySeverityAscLastViolationAtDesc(activeStates)
-                .stream()
-                .map(AlarmDto::from)
-                .toList();
+    public List<AlarmDto> listAlarms(
+            @RequestParam(required = false) Long parameterId,
+            @RequestParam(required = false) String tool,
+            @RequestParam(required = false) String severity,
+            @RequestParam(required = false) String state) {
+
+        List<AlarmState> states;
+        if (state != null) {
+            states = List.of(AlarmState.valueOf(state));
+        } else {
+            states = List.of(AlarmState.FIRING, AlarmState.ACKNOWLEDGED);
+        }
+
+        Severity severityEnum = severity != null ? Severity.valueOf(severity) : null;
+
+        return toDtos(alarmRepo.findFiltered(states, parameterId, tool, severityEnum));
+    }
+
+    @GetMapping("/resolved")
+    public List<AlarmDto> listResolvedAlarms() {
+        Instant since = Instant.now().minus(java.time.Duration.ofHours(24));
+        return toDtos(alarmRepo.findResolvedSince(since));
+    }
+
+    private List<AlarmDto> toDtos(List<AlarmEntity> entities) {
+        Map<Long, String> nameCache = new java.util.HashMap<>();
+        return entities.stream().map(e -> {
+            String name = nameCache.computeIfAbsent(e.getParameterId(),
+                    id -> parameterRepo.findById(id).map(ParameterEntity::getName).orElse(null));
+            return AlarmDto.from(e, name);
+        }).toList();
     }
 
     @PostMapping("/{id}/acknowledge")
