@@ -2,13 +2,16 @@ package com.waferalarm.evaluator;
 
 import com.waferalarm.domain.LimitData;
 
+import org.springframework.stereotype.Component;
+
 import java.util.*;
 import java.util.logging.Logger;
 
 /**
  * Pure function: resolves the most-specific matching limit for a measurement's context.
- * No DB dependency.
+ * No DB dependency — the Spring @Component is for wiring convenience only.
  */
+@Component
 public class LimitResolver {
 
     private static final Logger log = Logger.getLogger(LimitResolver.class.getName());

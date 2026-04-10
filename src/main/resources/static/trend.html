@@ -11,22 +11,104 @@
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f6fa; color: #333; }
-    .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+    .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
     h1 { font-size: 1.5rem; font-weight: 600; margin-bottom: 20px; }
     .chart-card { background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); padding: 20px; margin-bottom: 20px; }
-    .info-bar { font-size: 0.8rem; color: #888; margin-bottom: 12px; display: flex; gap: 16px; }
+    .info-bar { font-size: 0.8rem; color: #888; margin-bottom: 12px; display: flex; gap: 16px; flex-wrap: wrap; }
     .info-bar span { background: #f0f0f0; padding: 2px 10px; border-radius: 4px; }
     .empty-state { text-align: center; padding: 48px 20px; color: #888; font-size: 1rem; }
     .back-link { font-size: 0.875rem; color: #3498db; text-decoration: none; margin-bottom: 16px; display: inline-block; }
     .back-link:hover { text-decoration: underline; }
+    .controls { background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); padding: 16px 20px; margin-bottom: 20px; display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+    .control-group { display: flex; flex-direction: column; gap: 4px; }
+    .control-group label { font-size: 0.75rem; font-weight: 600; color: #666; text-transform: uppercase; letter-spacing: 0.5px; }
+    .control-group select, .control-group input { padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.85rem; min-width: 120px; }
+    .time-presets { display: flex; gap: 4px; }
+    .time-presets button { padding: 6px 12px; border: 1px solid #ddd; border-radius: 4px; background: #fff; cursor: pointer; font-size: 0.8rem; }
+    .time-presets button.active { background: #3498db; color: #fff; border-color: #3498db; }
+    .time-presets button:hover:not(.active) { background: #f0f0f0; }
+    .btn { padding: 6px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85rem; font-weight: 500; }
+    .btn-primary { background: #3498db; color: #fff; }
+    .btn-primary:hover { background: #2980b9; }
+    .btn-sm { padding: 4px 10px; font-size: 0.75rem; }
+    .param-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+    .param-tag { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; color: #fff; }
+    .param-tag button { background: none; border: none; color: #fff; cursor: pointer; font-size: 0.85rem; line-height: 1; opacity: 0.7; }
+    .param-tag button:hover { opacity: 1; }
+    .color-mode { display: flex; gap: 4px; }
+    .color-mode button { padding: 4px 10px; border: 1px solid #ddd; border-radius: 4px; background: #fff; cursor: pointer; font-size: 0.75rem; }
+    .color-mode button.active { background: #3498db; color: #fff; border-color: #3498db; }
+    .layout-row { display: flex; gap: 20px; }
+    .chart-area { flex: 1; min-width: 0; }
+    .side-panel { width: 340px; background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); padding: 20px; max-height: 520px; overflow-y: auto; }
+    .side-panel h3 { font-size: 1rem; margin-bottom: 12px; }
+    .detail-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #f0f0f0; font-size: 0.85rem; }
+    .detail-row .label { color: #888; }
+    .detail-row .val { font-weight: 500; }
+    .deep-link { display: inline-block; margin-top: 12px; color: #3498db; font-size: 0.85rem; }
+    .share-bar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
+    .share-bar input { flex: 1; padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.8rem; }
+    .share-bar button { white-space: nowrap; }
   </style>
 </head>
 <body>
   <div id="root"></div>
   <script type="text/babel">
-    const { useState, useEffect, useRef } = React;
+    const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
-    function TrendChart({ points }) {
+    const SERIES_COLORS = ['#3498db', '#e74c3c', '#2ecc71', '#f39c12', '#9b59b6'];
+    const TOOL_COLORS = {};
+    const RECIPE_COLORS = {};
+    let toolColorIdx = 0, recipeColorIdx = 0;
+    const PALETTE = ['#3498db','#e74c3c','#2ecc71','#f39c12','#9b59b6','#1abc9c','#e67e22','#8e44ad','#2c3e50','#16a085'];
+
+    function getToolColor(t) {
+      if (!TOOL_COLORS[t]) TOOL_COLORS[t] = PALETTE[toolColorIdx++ % PALETTE.length];
+      return TOOL_COLORS[t];
+    }
+    function getRecipeColor(r) {
+      if (!RECIPE_COLORS[r]) RECIPE_COLORS[r] = PALETTE[recipeColorIdx++ % PALETTE.length];
+      return RECIPE_COLORS[r];
+    }
+
+    function parseUrlState() {
+      const p = new URLSearchParams(window.location.search);
+      const pids = p.get('parameterIds') ? p.get('parameterIds').split(',').map(Number).filter(n => !isNaN(n)) : [];
+      return {
+        parameterIds: pids,
+        tool: p.get('tool') || '',
+        recipe: p.get('recipe') || '',
+        product: p.get('product') || '',
+        lot: p.get('lot') || '',
+        from: p.get('from') || '',
+        to: p.get('to') || '',
+        preset: p.get('preset') || '24h',
+        colorBy: p.get('colorBy') || 'series',
+      };
+    }
+
+    function buildUrl(state) {
+      const p = new URLSearchParams();
+      if (state.parameterIds.length) p.set('parameterIds', state.parameterIds.join(','));
+      if (state.tool) p.set('tool', state.tool);
+      if (state.recipe) p.set('recipe', state.recipe);
+      if (state.product) p.set('product', state.product);
+      if (state.lot) p.set('lot', state.lot);
+      if (state.from) p.set('from', state.from);
+      if (state.to) p.set('to', state.to);
+      if (state.preset) p.set('preset', state.preset);
+      if (state.colorBy) p.set('colorBy', state.colorBy);
+      return window.location.pathname + '?' + p.toString();
+    }
+
+    function presetRange(preset) {
+      const now = new Date();
+      const ms = { '1h': 3600000, '24h': 86400000, '7d': 604800000, '30d': 2592000000 };
+      const from = new Date(now.getTime() - (ms[preset] || ms['24h']));
+      return { from: from.toISOString(), to: now.toISOString() };
+    }
+
+    function TrendChart({ seriesMap, parameters, colorBy, onPointClick, selectedPoint }) {
       const chartRef = useRef(null);
       const instanceRef = useRef(null);
 
@@ -35,84 +117,282 @@
         if (!instanceRef.current) {
           instanceRef.current = echarts.init(chartRef.current);
         }
+        const chart = instanceRef.current;
 
-        if (points.length === 0) {
-          instanceRef.current.setOption({
-            title: { text: 'No data', left: 'center', top: 'center', textStyle: { color: '#999', fontSize: 16 } },
-            xAxis: { show: false },
-            yAxis: { show: false },
-            series: [],
-          });
-          return;
-        }
+        const series = [];
+        const paramIds = Object.keys(seriesMap);
+        const markAreas = [];
 
-        const timestamps = points.map(p => new Date(p.ts).toLocaleString());
-        const values = points.map(p => p.value);
+        paramIds.forEach((pid, idx) => {
+          const resp = seriesMap[pid];
+          if (!resp) return;
+          const pts = resp.points || [];
+          const paramName = (parameters.find(p => String(p.id) === String(pid)) || {}).name || `Param ${pid}`;
+          const seriesColor = SERIES_COLORS[idx % SERIES_COLORS.length];
 
-        instanceRef.current.setOption({
-          tooltip: {
-            trigger: 'axis',
-            formatter: params => {
-              const p = params[0];
-              return `${p.name}<br/>Value: ${p.value}`;
-            },
-          },
-          xAxis: {
-            type: 'category',
-            data: timestamps,
-            axisLabel: { rotate: 30, fontSize: 10 },
-          },
-          yAxis: { type: 'value', name: 'Value' },
-          series: [{
-            type: 'line',
-            data: values,
-            symbol: 'circle',
-            symbolSize: 4,
-            lineStyle: { width: 1.5, color: '#3498db' },
-            itemStyle: { color: '#3498db' },
-          }],
-          grid: { top: 40, bottom: 80, left: 60, right: 20 },
-          dataZoom: [{ type: 'inside' }],
+          if (colorBy === 'series') {
+            series.push({
+              name: paramName,
+              type: 'line',
+              data: pts.map(p => [new Date(p.ts).getTime(), p.value]),
+              symbol: 'circle',
+              symbolSize: 5,
+              lineStyle: { width: 1.5, color: seriesColor },
+              itemStyle: { color: seriesColor },
+              yAxisIndex: idx > 0 ? Math.min(idx, 1) : 0,
+            });
+          } else {
+            // Group by tool or recipe
+            const groups = {};
+            pts.forEach(p => {
+              const key = colorBy === 'tool' ? (p.tool || 'unknown') : (p.recipe || 'unknown');
+              if (!groups[key]) groups[key] = [];
+              groups[key].push([new Date(p.ts).getTime(), p.value]);
+            });
+            Object.entries(groups).forEach(([key, data]) => {
+              const c = colorBy === 'tool' ? getToolColor(key) : getRecipeColor(key);
+              series.push({
+                name: `${paramName} [${key}]`,
+                type: 'line',
+                data,
+                symbol: 'circle',
+                symbolSize: 5,
+                lineStyle: { width: 1.5, color: c },
+                itemStyle: { color: c },
+                yAxisIndex: idx > 0 ? Math.min(idx, 1) : 0,
+              });
+            });
+          }
+
+          // Control limit lines
+          if (resp.upperLimit != null) {
+            series.push({
+              name: `${paramName} UCL`,
+              type: 'line',
+              data: pts.length > 0 ? [[new Date(pts[0].ts).getTime(), resp.upperLimit], [new Date(pts[pts.length-1].ts).getTime(), resp.upperLimit]] : [],
+              lineStyle: { width: 1, color: '#e74c3c', type: 'dashed' },
+              symbol: 'none',
+              yAxisIndex: idx > 0 ? Math.min(idx, 1) : 0,
+              tooltip: { show: false },
+            });
+          }
+          if (resp.lowerLimit != null) {
+            series.push({
+              name: `${paramName} LCL`,
+              type: 'line',
+              data: pts.length > 0 ? [[new Date(pts[0].ts).getTime(), resp.lowerLimit], [new Date(pts[pts.length-1].ts).getTime(), resp.lowerLimit]] : [],
+              lineStyle: { width: 1, color: '#e74c3c', type: 'dashed' },
+              symbol: 'none',
+              yAxisIndex: idx > 0 ? Math.min(idx, 1) : 0,
+              tooltip: { show: false },
+            });
+          }
+          if (resp.upperLimit != null && resp.lowerLimit != null) {
+            const mean = (resp.upperLimit + resp.lowerLimit) / 2;
+            series.push({
+              name: `${paramName} Mean`,
+              type: 'line',
+              data: pts.length > 0 ? [[new Date(pts[0].ts).getTime(), mean], [new Date(pts[pts.length-1].ts).getTime(), mean]] : [],
+              lineStyle: { width: 1, color: '#27ae60', type: 'dotted' },
+              symbol: 'none',
+              yAxisIndex: idx > 0 ? Math.min(idx, 1) : 0,
+              tooltip: { show: false },
+            });
+          }
+
+          // Alarm bands
+          if (resp.alarmBands) {
+            resp.alarmBands.forEach(band => {
+              markAreas.push([
+                { xAxis: new Date(band.from).getTime(), itemStyle: { color: band.severity === 'CRITICAL' ? 'rgba(231,76,60,0.12)' : band.severity === 'WARNING' ? 'rgba(243,156,18,0.12)' : 'rgba(52,152,219,0.08)' } },
+                { xAxis: new Date(band.to).getTime() }
+              ]);
+            });
+          }
         });
 
-        const handleResize = () => instanceRef.current?.resize();
+        // Attach markArea to first data series
+        if (markAreas.length > 0 && series.length > 0) {
+          const firstDataSeries = series.find(s => s.data && s.data.length > 0 && s.symbol !== 'none');
+          if (firstDataSeries) {
+            firstDataSeries.markArea = { silent: true, data: markAreas };
+          }
+        }
+
+        const yAxes = [{ type: 'value', name: 'Value' }];
+        if (paramIds.length > 1) {
+          yAxes.push({ type: 'value', name: 'Value (2)', position: 'right', splitLine: { show: false } });
+        }
+
+        chart.setOption({
+          tooltip: {
+            trigger: 'item',
+            formatter: params => {
+              const d = new Date(params.data[0]).toLocaleString();
+              return `${params.seriesName}<br/>${d}<br/>Value: ${params.data[1]}`;
+            },
+          },
+          legend: { top: 0, type: 'scroll' },
+          xAxis: {
+            type: 'time',
+            axisLabel: { fontSize: 10 },
+          },
+          yAxis: yAxes,
+          series,
+          grid: { top: 50, bottom: 60, left: 60, right: paramIds.length > 1 ? 60 : 20 },
+          dataZoom: [{ type: 'inside' }, { type: 'slider', bottom: 10 }],
+        }, true);
+
+        chart.off('click');
+        chart.on('click', (params) => {
+          if (params.componentType === 'series' && params.data) {
+            // Find the matching point in seriesMap
+            const ts = params.data[0];
+            const val = params.data[1];
+            for (const pid of paramIds) {
+              const resp = seriesMap[pid];
+              if (!resp) continue;
+              const pt = resp.points.find(p => new Date(p.ts).getTime() === ts && p.value === val);
+              if (pt) { onPointClick({ ...pt, parameterId: pid }); return; }
+            }
+          }
+        });
+
+        const handleResize = () => chart.resize();
         window.addEventListener('resize', handleResize);
         return () => window.removeEventListener('resize', handleResize);
-      }, [points]);
+      }, [seriesMap, parameters, colorBy]);
 
-      return <div ref={chartRef} style={{ width: '100%', height: 400 }} />;
+      return <div ref={chartRef} style={{ width: '100%', height: 440 }} />;
+    }
+
+    function DrilldownPanel({ point, parameters, onClose }) {
+      if (!point) return null;
+      const paramName = (parameters.find(p => String(p.id) === String(point.parameterId)) || {}).name || `Param ${point.parameterId}`;
+      return (
+        <div className="side-panel">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h3>Wafer Detail</h3>
+            <button onClick={onClose} className="btn btn-sm" style={{ background: '#eee' }}>Close</button>
+          </div>
+          <div className="detail-row"><span className="label">Parameter</span><span className="val">{paramName}</span></div>
+          <div className="detail-row"><span className="label">Value</span><span className="val">{point.value}</span></div>
+          <div className="detail-row"><span className="label">Timestamp</span><span className="val">{new Date(point.ts).toLocaleString()}</span></div>
+          <div className="detail-row"><span className="label">Wafer ID</span><span className="val">{point.waferId || '-'}</span></div>
+          <div className="detail-row"><span className="label">Tool</span><span className="val">{point.tool || '-'}</span></div>
+          <div className="detail-row"><span className="label">Recipe</span><span className="val">{point.recipe || '-'}</span></div>
+          <div className="detail-row"><span className="label">Product</span><span className="val">{point.product || '-'}</span></div>
+          <div className="detail-row"><span className="label">Lot</span><span className="val">{point.lotId || '-'}</span></div>
+          <a className="deep-link" href={`#source-lookup?waferId=${encodeURIComponent(point.waferId || '')}&parameterId=${point.parameterId}`} target="_blank" rel="noopener">
+            Open in source system &rarr;
+          </a>
+        </div>
+      );
     }
 
     function App() {
-      const [points, setPoints] = useState([]);
-      const [downsampled, setDownsampled] = useState(false);
-      const [loading, setLoading] = useState(true);
+      const initial = parseUrlState();
+      const [parameters, setParameters] = useState([]);
+      const [filters, setFilters] = useState({ tools: [], recipes: [], products: [], lots: [] });
+      const [selectedParams, setSelectedParams] = useState(initial.parameterIds);
+      const [addParamId, setAddParamId] = useState('');
+      const [tool, setTool] = useState(initial.tool);
+      const [recipe, setRecipe] = useState(initial.recipe);
+      const [product, setProduct] = useState(initial.product);
+      const [lot, setLot] = useState(initial.lot);
+      const [preset, setPreset] = useState(initial.preset);
+      const [customFrom, setCustomFrom] = useState(initial.from);
+      const [customTo, setCustomTo] = useState(initial.to);
+      const [colorBy, setColorBy] = useState(initial.colorBy);
+      const [seriesMap, setSeriesMap] = useState({});
+      const [loading, setLoading] = useState(false);
       const [error, setError] = useState(null);
+      const [selectedPoint, setSelectedPoint] = useState(null);
 
+      // Load parameters and filter values
       useEffect(() => {
-        async function fetchTrend() {
-          try {
-            // Hardcoded parameter ID 1 (the walking-skeleton CD parameter)
-            // Default to last 24 hours
-            const to = new Date().toISOString();
-            const from = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-
-            const res = await fetch(`/api/trend-chart?parameterId=1&from=${from}&to=${to}`);
-            if (!res.ok) throw new Error(res.statusText);
-            const data = await res.json();
-            setPoints(data.points || []);
-            setDownsampled(data.downsampled || false);
-          } catch (e) {
-            setError(e.message);
-          } finally {
-            setLoading(false);
-          }
-        }
-        fetchTrend();
+        fetch('/api/parameters').then(r => r.json()).then(setParameters).catch(() => {});
+        fetch('/api/trend-chart/filters').then(r => r.json()).then(setFilters).catch(() => {});
       }, []);
 
-      if (loading) return <div className="container"><div className="empty-state">Loading...</div></div>;
-      if (error) return <div className="container"><div className="empty-state">Error: {error}</div></div>;
+      // Auto-select first parameter if none from URL
+      useEffect(() => {
+        if (selectedParams.length === 0 && parameters.length > 0) {
+          setSelectedParams([parameters[0].id]);
+        }
+      }, [parameters]);
+
+      const getTimeRange = useCallback(() => {
+        if (preset === 'custom') {
+          return { from: customFrom, to: customTo };
+        }
+        return presetRange(preset);
+      }, [preset, customFrom, customTo]);
+
+      const fetchData = useCallback(async () => {
+        if (selectedParams.length === 0) return;
+        setLoading(true);
+        setError(null);
+        try {
+          const { from, to } = getTimeRange();
+          if (!from || !to) { setLoading(false); return; }
+
+          if (selectedParams.length === 1) {
+            const params = new URLSearchParams({ parameterId: selectedParams[0], from, to });
+            if (tool) params.set('tool', tool);
+            if (recipe) params.set('recipe', recipe);
+            if (product) params.set('product', product);
+            if (lot) params.set('lot', lot);
+            const res = await fetch(`/api/trend-chart?${params}`);
+            if (!res.ok) throw new Error(res.statusText);
+            const data = await res.json();
+            setSeriesMap({ [selectedParams[0]]: data });
+          } else {
+            const params = new URLSearchParams({ from, to });
+            selectedParams.forEach(pid => params.append('parameterIds', pid));
+            if (tool) params.set('tool', tool);
+            if (recipe) params.set('recipe', recipe);
+            if (product) params.set('product', product);
+            if (lot) params.set('lot', lot);
+            const res = await fetch(`/api/trend-chart/multi?${params}`);
+            if (!res.ok) throw new Error(res.statusText);
+            const data = await res.json();
+            setSeriesMap(data);
+          }
+        } catch (e) {
+          setError(e.message);
+        } finally {
+          setLoading(false);
+        }
+      }, [selectedParams, tool, recipe, product, lot, preset, customFrom, customTo, getTimeRange]);
+
+      useEffect(() => { fetchData(); }, [fetchData]);
+
+      // Update URL when state changes
+      useEffect(() => {
+        const { from, to } = getTimeRange();
+        const url = buildUrl({ parameterIds: selectedParams, tool, recipe, product, lot, from, to, preset, colorBy });
+        window.history.replaceState(null, '', url);
+      }, [selectedParams, tool, recipe, product, lot, preset, customFrom, customTo, colorBy]);
+
+      const shareUrl = useMemo(() => {
+        return window.location.href;
+      }, [selectedParams, tool, recipe, product, lot, preset, customFrom, customTo, colorBy]);
+
+      const addParam = () => {
+        const pid = parseInt(addParamId);
+        if (!pid || selectedParams.includes(pid)) return;
+        if (selectedParams.length >= 5) { alert('Maximum 5 parameters'); return; }
+        setSelectedParams([...selectedParams, pid]);
+        setAddParamId('');
+      };
+
+      const removeParam = (pid) => {
+        setSelectedParams(selectedParams.filter(p => p !== pid));
+      };
+
+      const totalPoints = Object.values(seriesMap).reduce((sum, r) => sum + (r.points?.length || 0), 0);
+      const anyDownsampled = Object.values(seriesMap).some(r => r.downsampled);
 
       return (
         <div className="container">
@@ -120,17 +400,134 @@
           {' | '}
           <a href="/parameters.html" className="back-link">Parameters</a>
           {' | '}
-          <a href="/source-systems.html" className="back-link">Source Systems</a>
-          {' | '}
-          <a href="/source-mappings.html" className="back-link">Mappings</a>
-          <h1>Trend Chart - CD Parameter</h1>
-          <div className="info-bar">
-            <span>{points.length} points</span>
-            {downsampled && <span>Downsampled</span>}
-            {!downsampled && points.length > 0 && <span>Raw data</span>}
+          <a href="/rules.html" className="back-link">Rules</a>
+          <h1>Trend Chart</h1>
+
+          {/* Controls */}
+          <div className="controls">
+            <div className="control-group">
+              <label>Time Range</label>
+              <div className="time-presets">
+                {['1h','24h','7d','30d'].map(p => (
+                  <button key={p} className={preset === p ? 'active' : ''} onClick={() => setPreset(p)}>{p}</button>
+                ))}
+                <button className={preset === 'custom' ? 'active' : ''} onClick={() => setPreset('custom')}>Custom</button>
+              </div>
+            </div>
+            {preset === 'custom' && (
+              <>
+                <div className="control-group">
+                  <label>From</label>
+                  <input type="datetime-local" value={customFrom ? customFrom.slice(0,16) : ''} onChange={e => setCustomFrom(new Date(e.target.value).toISOString())} />
+                </div>
+                <div className="control-group">
+                  <label>To</label>
+                  <input type="datetime-local" value={customTo ? customTo.slice(0,16) : ''} onChange={e => setCustomTo(new Date(e.target.value).toISOString())} />
+                </div>
+              </>
+            )}
+            <div className="control-group">
+              <label>Tool</label>
+              <select value={tool} onChange={e => setTool(e.target.value)}>
+                <option value="">All</option>
+                {filters.tools.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <div className="control-group">
+              <label>Recipe</label>
+              <select value={recipe} onChange={e => setRecipe(e.target.value)}>
+                <option value="">All</option>
+                {filters.recipes.map(r => <option key={r} value={r}>{r}</option>)}
+              </select>
+            </div>
+            <div className="control-group">
+              <label>Product</label>
+              <select value={product} onChange={e => setProduct(e.target.value)}>
+                <option value="">All</option>
+                {filters.products.map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
+            </div>
+            <div className="control-group">
+              <label>Lot</label>
+              <select value={lot} onChange={e => setLot(e.target.value)}>
+                <option value="">All</option>
+                {filters.lots.map(l => <option key={l} value={l}>{l}</option>)}
+              </select>
+            </div>
+            <div className="control-group">
+              <label>Color By</label>
+              <div className="color-mode">
+                {['series','tool','recipe'].map(m => (
+                  <button key={m} className={colorBy === m ? 'active' : ''} onClick={() => setColorBy(m)}>{m}</button>
+                ))}
+              </div>
+            </div>
           </div>
-          <div className="chart-card">
-            <TrendChart points={points} />
+
+          {/* Parameter selection */}
+          <div className="controls" style={{ flexDirection: 'column', alignItems: 'flex-start' }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', width: '100%' }}>
+              <div className="control-group" style={{ flex: 1 }}>
+                <label>Add Parameter</label>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  <select value={addParamId} onChange={e => setAddParamId(e.target.value)} style={{ flex: 1 }}>
+                    <option value="">Select...</option>
+                    {parameters.filter(p => p.enabled && !selectedParams.includes(p.id)).map(p => (
+                      <option key={p.id} value={p.id}>{p.name} ({p.unit || '-'})</option>
+                    ))}
+                  </select>
+                  <button className="btn btn-primary btn-sm" onClick={addParam}>Add</button>
+                </div>
+              </div>
+            </div>
+            <div className="param-tags">
+              {selectedParams.map((pid, idx) => {
+                const p = parameters.find(pr => pr.id === pid);
+                return (
+                  <span key={pid} className="param-tag" style={{ background: SERIES_COLORS[idx % SERIES_COLORS.length] }}>
+                    {p ? p.name : `#${pid}`}
+                    {selectedParams.length > 1 && <button onClick={() => removeParam(pid)}>&times;</button>}
+                  </span>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Share URL bar */}
+          <div className="share-bar">
+            <input readOnly value={shareUrl} id="share-url" />
+            <button className="btn btn-primary btn-sm" onClick={() => { navigator.clipboard.writeText(shareUrl); }}>Copy URL</button>
+          </div>
+
+          {/* Info bar */}
+          <div className="info-bar">
+            <span>{totalPoints} points</span>
+            {anyDownsampled && <span>Downsampled</span>}
+            {!anyDownsampled && totalPoints > 0 && <span>Raw data</span>}
+            {loading && <span>Loading...</span>}
+            {error && <span style={{ background: '#fee', color: '#c00' }}>Error: {error}</span>}
+          </div>
+
+          {/* Chart + drilldown */}
+          <div className="layout-row">
+            <div className="chart-area">
+              <div className="chart-card">
+                {totalPoints === 0 && !loading ? (
+                  <div className="empty-state">No data for the selected parameters and time range</div>
+                ) : (
+                  <TrendChart
+                    seriesMap={seriesMap}
+                    parameters={parameters}
+                    colorBy={colorBy}
+                    onPointClick={setSelectedPoint}
+                    selectedPoint={selectedPoint}
+                  />
+                )}
+              </div>
+            </div>
+            {selectedPoint && (
+              <DrilldownPanel point={selectedPoint} parameters={parameters} onClose={() => setSelectedPoint(null)} />
+            )}
           </div>
         </div>
       );
