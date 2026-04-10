@@ -12,6 +12,16 @@ spring:
     enabled: true
     locations: classpath:db/migration,classpath:db/migration-test
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics,prometheus
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+
 app:
   collector:
     pool-size: 1

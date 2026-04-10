@@ -28,6 +28,7 @@ public class EvaluatorRunner {
     private final EvalWatermarkRepository watermarkRepo;
     private final ParameterLimitRepository parameterLimitRepo;
     private final RuleStateRepository ruleStateRepo;
+    private final EvalRunRepository evalRunRepo;
     private final RuleEvaluator ruleEvaluator;
     private final AlarmLifecycle alarmLifecycle;
     private final ExecutorService evaluatorExecutor;
@@ -41,6 +42,7 @@ public class EvaluatorRunner {
             EvalWatermarkRepository watermarkRepo,
             ParameterLimitRepository parameterLimitRepo,
             RuleStateRepository ruleStateRepo,
+            EvalRunRepository evalRunRepo,
             RuleEvaluator ruleEvaluator,
             AlarmLifecycle alarmLifecycle,
             @Qualifier("evaluatorExecutor") ExecutorService evaluatorExecutor,
@@ -52,6 +54,7 @@ public class EvaluatorRunner {
         this.watermarkRepo = watermarkRepo;
         this.parameterLimitRepo = parameterLimitRepo;
         this.ruleStateRepo = ruleStateRepo;
+        this.evalRunRepo = evalRunRepo;
         this.ruleEvaluator = ruleEvaluator;
         this.alarmLifecycle = alarmLifecycle;
         this.evaluatorExecutor = evaluatorExecutor;
@@ -59,6 +62,26 @@ public class EvaluatorRunner {
     }
 
     public void tick() {
+        Instant tickStart = Instant.now();
+        int measurementCount = 0;
+        int eventCount = 0;
+        String tickError = null;
+        try {
+            var result = doTick();
+            measurementCount = result[0];
+            eventCount = result[1];
+        } catch (Exception e) {
+            tickError = e.getMessage();
+            log.error("Evaluator tick failed", e);
+        } finally {
+            Instant tickEnd = Instant.now();
+            evalRunRepo.save(new EvalRunEntity(
+                    tickStart, tickEnd, measurementCount, eventCount,
+                    java.time.Duration.between(tickStart, tickEnd).toMillis(), tickError));
+        }
+    }
+
+    private int[] doTick() {
         EvalWatermark watermark = watermarkRepo.findByWatermarkKey(WATERMARK_KEY)
                 .orElse(new EvalWatermark(WATERMARK_KEY, Instant.EPOCH));
 
@@ -72,11 +95,11 @@ public class EvaluatorRunner {
 
         if (measurements.isEmpty()) {
             log.debug("No new measurements to evaluate");
-            return;
+            return new int[]{0, 0};
         }
 
         List<RuleEntity> enabledRules = ruleRepo.findByEnabledTrue();
-        if (enabledRules.isEmpty()) return;
+        if (enabledRules.isEmpty()) return new int[]{measurements.size(), 0};
 
         List<RuleData> rules = enabledRules.stream().map(RuleEntity::toRuleData).toList();
 
@@ -191,5 +214,6 @@ public class EvaluatorRunner {
 
         log.info("Evaluator tick: {} measurements, {} events, watermark={}",
                 measurements.size(), events.size(), maxIngestedAt);
+        return new int[]{measurements.size(), events.size()};
     }
 }
