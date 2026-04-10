@@ -225,6 +225,42 @@ class BackfillRunnerIntegrationTest {
         assertThat(trendData.getFirst().getWaferId()).isEqualTo("W-BACKFILL");
     }
 
+    @Test
+    void backfill_resumes_from_last_processed_ts_after_restart() throws Exception {
+        var param = parameterRepo.save(new ParameterEntity("CD", "nm", 100.0, null));
+        var source = createSourceSystem();
+        var mapping = createMapping(source.getId(), param.getId());
+
+        // Simulate a partially completed backfill task (as if the process crashed)
+        Instant thirtyDaysAgo = Instant.now().minus(30, ChronoUnit.DAYS);
+        Instant fifteenDaysAgo = Instant.now().minus(15, ChronoUnit.DAYS);
+        var task = new BackfillTaskEntity(mapping.getId(), thirtyDaysAgo, Instant.now());
+        task.markRunning();
+        task.recordProgress(5, fifteenDaysAgo); // Already processed up to 15 days ago
+        task = backfillTaskRepo.save(task);
+
+        // Insert data: one before the last_processed_ts (should be skipped), one after
+        jdbcTemplate.update(
+                "INSERT INTO fake_source (wafer_id, measured_value, ts, tool, recipe, product, lot_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "W-ALREADY-DONE", 90.0, java.sql.Timestamp.from(thirtyDaysAgo.plus(1, ChronoUnit.DAYS)),
+                "TOOL-A", "RCP-1", "PROD-X", "LOT-1");
+        jdbcTemplate.update(
+                "INSERT INTO fake_source (wafer_id, measured_value, ts, tool, recipe, product, lot_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "W-REMAINING", 95.0, java.sql.Timestamp.from(fifteenDaysAgo.plus(1, ChronoUnit.DAYS)),
+                "TOOL-A", "RCP-1", "PROD-X", "LOT-1");
+
+        // Resume pending/running tasks (simulates app restart)
+        backfillRunner.resumeIncomplete();
+        awaitTaskCompletion(task.getId(), 10);
+
+        var completedTask = backfillTaskRepo.findById(task.getId()).orElseThrow();
+        assertThat(completedTask.getStatus()).isEqualTo(BackfillTaskEntity.Status.COMPLETED);
+        // Should only pull the row AFTER lastProcessedTs
+        assertThat(completedTask.getRowsProcessed()).isEqualTo(5 + 1); // previous 5 + 1 new
+        assertThat(measurementRepo.findAll()).hasSize(1);
+        assertThat(measurementRepo.findAll().getFirst().getWaferId()).isEqualTo("W-REMAINING");
+    }
+
     private void awaitTaskCompletion(Long taskId, int timeoutSeconds) throws InterruptedException {
         long deadline = System.currentTimeMillis() + timeoutSeconds * 1000L;
         while (System.currentTimeMillis() < deadline) {

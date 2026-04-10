@@ -28,6 +28,7 @@ class SourceConnectorTest {
     @Autowired ParameterLimitRepository parameterLimitRepo;
     @Autowired ConnectorRunRepository connectorRunRepo;
     @Autowired CollectorWatermarkRepository watermarkRepo;
+    @Autowired BackfillTaskRepository backfillTaskRepo;
 
     SourceConnector connector;
 
@@ -40,6 +41,7 @@ class SourceConnectorTest {
         ruleVersionRepo.deleteAll();
         ruleRepo.deleteAll();
         watermarkRepo.deleteAll();
+        backfillTaskRepo.deleteAll();
         sourceMappingRepo.deleteAll();
         sourceSystemRepo.deleteAll();
         parameterRepo.deleteAll();

@@ -6,6 +6,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
+import jakarta.annotation.PostConstruct;
+
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
@@ -33,6 +35,16 @@ public class BackfillRunner {
         this.measurementRepo = measurementRepo;
         this.taskRepo = taskRepo;
         this.backfillExecutor = backfillExecutor;
+    }
+
+    @PostConstruct
+    public void resumeIncomplete() {
+        List<BackfillTaskEntity> incomplete = taskRepo.findByStatusIn(
+                List.of(BackfillTaskEntity.Status.PENDING, BackfillTaskEntity.Status.RUNNING));
+        for (BackfillTaskEntity task : incomplete) {
+            log.info("Resuming backfill task {} for mapping {}", task.getId(), task.getSourceMappingId());
+            backfillExecutor.submit(() -> executeBackfill(task.getId()));
+        }
     }
 
     public BackfillTaskEntity triggerBackfill(Long mappingId) {
