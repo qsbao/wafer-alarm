@@ -217,6 +217,37 @@ class EvaluatorRunnerIntegrationTest {
         assertThat(alarms.getFirst().getThresholdValue()).isEqualTo(100.0);
     }
 
+    // --- Limit deletion fallback (AC5) ---
+
+    @Test
+    void deleting_specific_limit_causes_fallback_to_global() {
+        // Global default: upper=100
+        var param = parameterRepo.save(new ParameterEntity("CD", "nm", 100.0, null));
+        ruleRepo.save(new RuleEntity(param.getId(), RuleType.UPPER_THRESHOLD, Severity.WARNING));
+
+        // Context-specific limit: upper=120 for TOOL-A/RCP-1
+        var specificLimit = parameterLimitRepo.save(new ParameterLimitEntity(
+                param.getId(), "{\"tool\":\"TOOL-A\",\"recipe\":\"RCP-1\"}", 120.0, null));
+
+        // value=110 with specific limit (120) → no alarm
+        measurementRepo.save(new MeasurementEntity(param.getId(), "W200", 110.0,
+                Instant.parse("2026-01-01T00:00:00Z"), "TOOL-A", "RCP-1", "PROD-X", "LOT-1"));
+        runner.tick();
+        assertThat(alarmRepo.findAll()).isEmpty();
+
+        // Delete the specific limit → falls back to global (100)
+        parameterLimitRepo.deleteById(specificLimit.getId());
+
+        // Same value=110 now exceeds global limit 100 → fires
+        measurementRepo.save(new MeasurementEntity(param.getId(), "W201", 110.0,
+                Instant.parse("2026-01-01T01:00:00Z"), "TOOL-A", "RCP-1", "PROD-X", "LOT-1"));
+        runner.tick();
+
+        List<AlarmEntity> alarms = alarmRepo.findAll();
+        assertThat(alarms).hasSize(1);
+        assertThat(alarms.getFirst().getThresholdValue()).isEqualTo(100.0);
+    }
+
     // --- Rate-of-change integration tests ---
 
     @Test
