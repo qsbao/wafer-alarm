@@ -93,6 +93,35 @@ class ParameterLimitControllerTest {
     }
 
     @Test
+    void create_limit_for_parameter_tool_recipe_tuple() throws Exception {
+        mvc.perform(post("/api/parameter-limits")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"parameterId":%d,"contextMatchJson":"{\\"tool\\":\\"TOOL-A\\",\\"recipe\\":\\"RCP-1\\"}","upperLimit":120.0,"lowerLimit":10.0}
+                    """.formatted(paramId)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.parameterId", is(paramId.intValue())))
+                .andExpect(jsonPath("$.contextMatchJson", is("{\"tool\":\"TOOL-A\",\"recipe\":\"RCP-1\"}")))
+                .andExpect(jsonPath("$.upperLimit", is(120.0)))
+                .andExpect(jsonPath("$.lowerLimit", is(10.0)));
+    }
+
+    @Test
+    void edit_limit_updates_values() throws Exception {
+        var limit = limitRepo.save(new ParameterLimitEntity(paramId, "{\"tool\":\"TOOL-A\"}", 100.0, 5.0));
+
+        mvc.perform(put("/api/parameter-limits/" + limit.getId())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"parameterId":%d,"contextMatchJson":"{\\"tool\\":\\"TOOL-A\\",\\"recipe\\":\\"RCP-1\\"}","upperLimit":150.0,"lowerLimit":15.0}
+                    """.formatted(paramId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.upperLimit", is(150.0)))
+                .andExpect(jsonPath("$.lowerLimit", is(15.0)))
+                .andExpect(jsonPath("$.contextMatchJson", is("{\"tool\":\"TOOL-A\",\"recipe\":\"RCP-1\"}")));
+    }
+
+    @Test
     void deleting_limit_writes_audit_record() throws Exception {
         var limit = limitRepo.save(new ParameterLimitEntity(paramId, "{}", 100.0, null));
 
