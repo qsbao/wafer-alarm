@@ -32,6 +32,15 @@ public class RuleEntity {
     @Column(name = "current_version_id")
     private Long currentVersionId;
 
+    @Column(name = "absolute_delta")
+    private Double absoluteDelta;
+
+    @Column(name = "percentage_delta")
+    private Double percentageDelta;
+
+    @Column(name = "minimum_baseline")
+    private Double minimumBaseline;
+
     protected RuleEntity() {}
 
     public RuleEntity(Long parameterId, RuleType ruleType, Severity severity) {
@@ -50,7 +59,8 @@ public class RuleEntity {
     public boolean isEnabled() { return enabled; }
 
     public RuleData toRuleData() {
-        return new RuleData(id, parameterId, ruleType, severity, enabled, currentVersionId);
+        return new RuleData(id, parameterId, ruleType, severity, enabled, currentVersionId,
+                absoluteDelta, percentageDelta, minimumBaseline);
     }
 
     public Long getCurrentVersionId() { return currentVersionId; }
@@ -61,4 +71,11 @@ public class RuleEntity {
     public void setSeverity(Severity severity) { this.severity = severity; this.updatedAt = Instant.now(); }
     public void setEnabled(boolean enabled) { this.enabled = enabled; this.updatedAt = Instant.now(); }
     public void setRuleType(RuleType ruleType) { this.ruleType = ruleType; this.updatedAt = Instant.now(); }
+
+    public Double getAbsoluteDelta() { return absoluteDelta; }
+    public void setAbsoluteDelta(Double absoluteDelta) { this.absoluteDelta = absoluteDelta; this.updatedAt = Instant.now(); }
+    public Double getPercentageDelta() { return percentageDelta; }
+    public void setPercentageDelta(Double percentageDelta) { this.percentageDelta = percentageDelta; this.updatedAt = Instant.now(); }
+    public Double getMinimumBaseline() { return minimumBaseline; }
+    public void setMinimumBaseline(Double minimumBaseline) { this.minimumBaseline = minimumBaseline; this.updatedAt = Instant.now(); }
 }

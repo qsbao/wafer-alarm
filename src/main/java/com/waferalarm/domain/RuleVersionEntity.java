@@ -29,6 +29,15 @@ public class RuleVersionEntity {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
+    @Column(name = "absolute_delta")
+    private Double absoluteDelta;
+
+    @Column(name = "percentage_delta")
+    private Double percentageDelta;
+
+    @Column(name = "minimum_baseline")
+    private Double minimumBaseline;
+
     protected RuleVersionEntity() {}
 
     public RuleVersionEntity(Long ruleId, RuleType ruleType, Severity severity, boolean enabled, String author) {
@@ -40,6 +49,14 @@ public class RuleVersionEntity {
         this.createdAt = Instant.now();
     }
 
+    public RuleVersionEntity(Long ruleId, RuleType ruleType, Severity severity, boolean enabled, String author,
+                             Double absoluteDelta, Double percentageDelta, Double minimumBaseline) {
+        this(ruleId, ruleType, severity, enabled, author);
+        this.absoluteDelta = absoluteDelta;
+        this.percentageDelta = percentageDelta;
+        this.minimumBaseline = minimumBaseline;
+    }
+
     public Long getId() { return id; }
     public Long getRuleId() { return ruleId; }
     public RuleType getRuleType() { return ruleType; }
@@ -47,4 +64,7 @@ public class RuleVersionEntity {
     public boolean isEnabled() { return enabled; }
     public String getAuthor() { return author; }
     public Instant getCreatedAt() { return createdAt; }
+    public Double getAbsoluteDelta() { return absoluteDelta; }
+    public Double getPercentageDelta() { return percentageDelta; }
+    public Double getMinimumBaseline() { return minimumBaseline; }
 }
