@@ -27,6 +27,7 @@ public class EvaluatorRunner {
     private final AlarmRepository alarmRepo;
     private final EvalWatermarkRepository watermarkRepo;
     private final ParameterLimitRepository parameterLimitRepo;
+    private final RuleStateRepository ruleStateRepo;
     private final RuleEvaluator ruleEvaluator;
     private final AlarmLifecycle alarmLifecycle;
     private final ExecutorService evaluatorExecutor;
@@ -39,6 +40,7 @@ public class EvaluatorRunner {
             AlarmRepository alarmRepo,
             EvalWatermarkRepository watermarkRepo,
             ParameterLimitRepository parameterLimitRepo,
+            RuleStateRepository ruleStateRepo,
             RuleEvaluator ruleEvaluator,
             AlarmLifecycle alarmLifecycle,
             @Qualifier("evaluatorExecutor") ExecutorService evaluatorExecutor,
@@ -49,6 +51,7 @@ public class EvaluatorRunner {
         this.alarmRepo = alarmRepo;
         this.watermarkRepo = watermarkRepo;
         this.parameterLimitRepo = parameterLimitRepo;
+        this.ruleStateRepo = ruleStateRepo;
         this.ruleEvaluator = ruleEvaluator;
         this.alarmLifecycle = alarmLifecycle;
         this.evaluatorExecutor = evaluatorExecutor;
@@ -99,7 +102,29 @@ public class EvaluatorRunner {
                         m.getTs(), m.deriveContextKey(), m.deriveContextMap()))
                 .toList();
 
-        List<AlarmEvent> events = ruleEvaluator.evaluate(rules, measurementData, limits);
+        // Load rule state for ROC rules
+        Map<String, RuleStateData> currentState = new HashMap<>();
+        for (RuleStateEntity rse : ruleStateRepo.findAll()) {
+            String key = rse.getRuleId() + "|" + rse.getContextKeyHash();
+            currentState.put(key, rse.toData());
+        }
+
+        EvaluationResult evalResult = ruleEvaluator.evaluateWithState(rules, measurementData, limits, currentState);
+        List<AlarmEvent> events = evalResult.events();
+
+        // Persist updated rule state
+        for (Map.Entry<String, RuleStateData> entry : evalResult.updatedState().entrySet()) {
+            String[] parts = entry.getKey().split("\\|", 2);
+            long ruleId = Long.parseLong(parts[0]);
+            String contextKey = parts[1];
+            RuleStateData data = entry.getValue();
+
+            RuleStateEntity entity = ruleStateRepo.findByRuleIdAndContextKeyHash(ruleId, contextKey)
+                    .orElse(new RuleStateEntity(ruleId, contextKey, data.lastValue(), data.lastTs(), data.lastWaferId()));
+            entity.updateFromData(data);
+            ruleStateRepo.save(entity);
+        }
+
         Instant now = Instant.now();
 
         // Track which (ruleId, contextKey) pairs had violations

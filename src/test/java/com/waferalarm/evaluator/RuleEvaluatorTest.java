@@ -4,6 +4,7 @@ import com.waferalarm.domain.*;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -177,6 +178,155 @@ class RuleEvaluatorTest {
 
         assertThat(events).hasSize(1);
         assertThat(events.getFirst().ruleVersionId()).isEqualTo(42L);
+    }
+
+    // --- Rate-of-change rules ---
+
+    private static RuleData rocRule(long ruleId, long paramId, Double absDelta, Double pctDelta, Double minBaseline) {
+        return new RuleData(ruleId, paramId, RuleType.RATE_OF_CHANGE, Severity.WARNING, true, null,
+                absDelta, pctDelta, minBaseline);
+    }
+
+    @Test
+    void roc_first_measurement_does_not_fire() {
+        var rule = rocRule(1L, 10L, 5.0, null, null);
+        var m = measurement(10L, "W001", 50.0, "A");
+
+        EvaluationResult result = evaluator.evaluateWithState(
+                List.of(rule), List.of(m), List.of(), Map.of());
+
+        assertThat(result.events()).isEmpty();
+        // But state should be recorded
+        assertThat(result.updatedState()).hasSize(1);
+        RuleStateData state = result.updatedState().values().iterator().next();
+        assertThat(state.lastValue()).isEqualTo(50.0);
+        assertThat(state.lastWaferId()).isEqualTo("W001");
+    }
+
+    @Test
+    void roc_fires_when_absolute_delta_exceeded() {
+        var rule = rocRule(1L, 10L, 5.0, null, null);
+        var m1 = new MeasurementData(10L, "W001", 50.0, Instant.parse("2026-01-01T00:00:00Z"), "tool=A", Map.of("tool", "A"));
+        var m2 = new MeasurementData(10L, "W002", 56.0, Instant.parse("2026-01-01T00:01:00Z"), "tool=A", Map.of("tool", "A"));
+
+        EvaluationResult result = evaluator.evaluateWithState(
+                List.of(rule), List.of(m1, m2), List.of(), Map.of());
+
+        assertThat(result.events()).hasSize(1);
+        AlarmEvent e = result.events().getFirst();
+        assertThat(e.ruleId()).isEqualTo(1L);
+        assertThat(e.violatingValue()).isEqualTo(56.0);
+        assertThat(e.thresholdValue()).isEqualTo(50.0); // previous value
+        assertThat(e.waferId()).isEqualTo("W002");
+    }
+
+    @Test
+    void roc_does_not_fire_when_absolute_delta_within_threshold() {
+        var rule = rocRule(1L, 10L, 5.0, null, null);
+        var m1 = new MeasurementData(10L, "W001", 50.0, Instant.parse("2026-01-01T00:00:00Z"), "tool=A", Map.of("tool", "A"));
+        var m2 = new MeasurementData(10L, "W002", 54.0, Instant.parse("2026-01-01T00:01:00Z"), "tool=A", Map.of("tool", "A"));
+
+        EvaluationResult result = evaluator.evaluateWithState(
+                List.of(rule), List.of(m1, m2), List.of(), Map.of());
+
+        assertThat(result.events()).isEmpty();
+    }
+
+    @Test
+    void roc_fires_when_percentage_delta_exceeded() {
+        var rule = rocRule(1L, 10L, null, 10.0, null); // 10% threshold
+        var m1 = new MeasurementData(10L, "W001", 100.0, Instant.parse("2026-01-01T00:00:00Z"), "tool=A", Map.of("tool", "A"));
+        var m2 = new MeasurementData(10L, "W002", 112.0, Instant.parse("2026-01-01T00:01:00Z"), "tool=A", Map.of("tool", "A"));
+
+        EvaluationResult result = evaluator.evaluateWithState(
+                List.of(rule), List.of(m1, m2), List.of(), Map.of());
+
+        assertThat(result.events()).hasSize(1);
+        assertThat(result.events().getFirst().waferId()).isEqualTo("W002");
+    }
+
+    @Test
+    void roc_minimum_baseline_guard_skips_percentage_check_near_zero() {
+        var rule = rocRule(1L, 10L, null, 10.0, 5.0); // 10% threshold, min baseline 5.0
+        // Previous value is 2.0 (below baseline of 5.0), current is 4.0
+        // 100% change but should NOT fire because prev < minimum_baseline
+        var m1 = new MeasurementData(10L, "W001", 2.0, Instant.parse("2026-01-01T00:00:00Z"), "tool=A", Map.of("tool", "A"));
+        var m2 = new MeasurementData(10L, "W002", 4.0, Instant.parse("2026-01-01T00:01:00Z"), "tool=A", Map.of("tool", "A"));
+
+        EvaluationResult result = evaluator.evaluateWithState(
+                List.of(rule), List.of(m1, m2), List.of(), Map.of());
+
+        assertThat(result.events()).isEmpty();
+    }
+
+    @Test
+    void roc_minimum_baseline_guard_allows_when_above_floor() {
+        var rule = rocRule(1L, 10L, null, 10.0, 5.0); // 10% threshold, min baseline 5.0
+        // Previous value is 100.0 (above baseline), current is 115.0 — 15% > 10%
+        var m1 = new MeasurementData(10L, "W001", 100.0, Instant.parse("2026-01-01T00:00:00Z"), "tool=A", Map.of("tool", "A"));
+        var m2 = new MeasurementData(10L, "W002", 115.0, Instant.parse("2026-01-01T00:01:00Z"), "tool=A", Map.of("tool", "A"));
+
+        EvaluationResult result = evaluator.evaluateWithState(
+                List.of(rule), List.of(m1, m2), List.of(), Map.of());
+
+        assertThat(result.events()).hasSize(1);
+    }
+
+    @Test
+    void roc_context_key_change_does_not_compare_across_contexts() {
+        var rule = rocRule(1L, 10L, 5.0, null, null);
+        // Tool A measurement, then Tool B — different contexts, no comparison
+        var m1 = new MeasurementData(10L, "W001", 50.0, Instant.parse("2026-01-01T00:00:00Z"), "tool=A", Map.of("tool", "A"));
+        var m2 = new MeasurementData(10L, "W002", 200.0, Instant.parse("2026-01-01T00:01:00Z"), "tool=B", Map.of("tool", "B"));
+
+        EvaluationResult result = evaluator.evaluateWithState(
+                List.of(rule), List.of(m1, m2), List.of(), Map.of());
+
+        assertThat(result.events()).isEmpty();
+        // Two separate state entries
+        assertThat(result.updatedState()).hasSize(2);
+    }
+
+    @Test
+    void roc_with_prior_state_fires_on_delta() {
+        var rule = rocRule(1L, 10L, 5.0, null, null);
+        // Simulate state persisted from a prior evaluator run
+        Map<String, RuleStateData> priorState = Map.of(
+                "1|tool=A", new RuleStateData(1L, "tool=A", 50.0, Instant.parse("2026-01-01T00:00:00Z"), "W001"));
+        var m = new MeasurementData(10L, "W002", 60.0, Instant.parse("2026-01-01T00:01:00Z"), "tool=A", Map.of("tool", "A"));
+
+        EvaluationResult result = evaluator.evaluateWithState(
+                List.of(rule), List.of(m), List.of(), priorState);
+
+        assertThat(result.events()).hasSize(1);
+        assertThat(result.events().getFirst().violatingValue()).isEqualTo(60.0);
+        assertThat(result.events().getFirst().thresholdValue()).isEqualTo(50.0);
+    }
+
+    @Test
+    void roc_both_absolute_and_percentage_fires_if_either_exceeded() {
+        // Absolute threshold 10, percentage threshold 50%
+        var rule = rocRule(1L, 10L, 10.0, 50.0, null);
+        // Delta is 6 (absolute: within 10 threshold), but 60% (exceeds 50%)
+        var m1 = new MeasurementData(10L, "W001", 10.0, Instant.parse("2026-01-01T00:00:00Z"), "tool=A", Map.of("tool", "A"));
+        var m2 = new MeasurementData(10L, "W002", 16.0, Instant.parse("2026-01-01T00:01:00Z"), "tool=A", Map.of("tool", "A"));
+
+        EvaluationResult result = evaluator.evaluateWithState(
+                List.of(rule), List.of(m1, m2), List.of(), Map.of());
+
+        assertThat(result.events()).hasSize(1);
+    }
+
+    @Test
+    void roc_disabled_rule_does_not_fire() {
+        var rule = new RuleData(1L, 10L, RuleType.RATE_OF_CHANGE, Severity.WARNING, false, null, 5.0, null, null);
+        var m1 = new MeasurementData(10L, "W001", 50.0, Instant.parse("2026-01-01T00:00:00Z"), "tool=A", Map.of("tool", "A"));
+        var m2 = new MeasurementData(10L, "W002", 200.0, Instant.parse("2026-01-01T00:01:00Z"), "tool=A", Map.of("tool", "A"));
+
+        EvaluationResult result = evaluator.evaluateWithState(
+                List.of(rule), List.of(m1, m2), List.of(), Map.of());
+
+        assertThat(result.events()).isEmpty();
     }
 
     // --- LimitResolver integration: specific context overrides global ---
